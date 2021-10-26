@@ -1,0 +1,31 @@
+= Welcome to Tailored OpenShift Guides
+:page-layout: home
+:!sectids:
+
+[.text-center.strong]
+== Overview
+
+The content and documentation found here is a selection of tailored guides, each covered a specific scenario. 
+
+[.tiles.browse]
+== Content
+
+
+[.tile]
+.Summary
+* xref:00-common-summary.adoc[Summary]
+
+[.tile]
+.xref:01-0-getting-started.adoc[Getting Started]
+* xref:01-1-architecture.adoc[Architecture]
+* xref:01-2-web-console.adoc[Web Console]
+
+[.tile]
+.CodeReady Containers
+* xref:02-0-codeready-containers.adoc[CodeReady Containers]
+
+
+// [.tile]
+// .xref:02-deploy.adoc[Deploying]
+// * xref:02-deploy.adoc#package[Package the Application]
+// * xref:02-deploy.adoc#deploy[Deploy the Application]

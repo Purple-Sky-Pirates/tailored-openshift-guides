@@ -1,0 +1,25 @@
+* xref:00-common-summary.adoc[Guides Summary]
+
+* xref:common-explore.adoc[Explore OpenShift]
+** xref:common-explore.adoc#the_web_console[The Web Console]
+** xref:common-explore.adoc#command_line_interface[Command Line Interface]
+*** xref:common-explore.adoc#download_openshift_cli[Download OpenShift CLI]
+*** xref:common-explore.adoc#connect_to_the_cluster_with_cli[Connect to the OpenShift Cluster from CLI]
+**** xref:common-explore.adoc#working_with_proxies[Working with proxies]
+
+* xref:01-0-getting-started.adoc[Getting Started]
+** xref:01-1-architecture.adoc#package[OpenShift Architecture]
+** xref:01-2-web-console.adoc#package[Web Console]
+** xref:01-3-cli.adoc#package[Command Line Interface]
+
+
+* xref:02-0-codeready-containers.adoc[CodeReady Containers]
+** xref:02-0-codeready-containers.adoc#introduction[Introduction]
+** xref:02-0-codeready-containers.adoc#minimum_requirements[Minimum Requirements]
+** xref:02-0-codeready-containers.adoc#init_setup[Initial Set-Up]
+** xref:02-0-codeready-containers.adoc#downloads[Downloads]
+** xref:02-0-codeready-containers.adoc#install_crc[Install CRC]
+** xref:02-0-codeready-containers.adoc#setup_remote[Setup as Remote Server]
+*** xref:02-0-codeready-containers.adoc#firewall[Firewalld]
+*** xref:02-0-codeready-containers.adoc#haproxy[HAProxy]
+*** xref:02-0-codeready-containers.adoc#client_config[Client Configuration]
