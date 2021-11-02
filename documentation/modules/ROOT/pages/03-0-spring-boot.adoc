@@ -1,0 +1,66 @@
+= Spring Boot development on OpenShift
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction to Spring Boot 
+
+This guide is a pragmatic combination taken from https://learn.openshift.com/, with the aim of providing concise "starter fpr tens" for deploying applications on OpenShift 4.x. 
+
+Create a new OpenShift project:
+
+[source%nowrap,console]
+----
+oc new-project example-project --display-name="Spring Boot App"
+----
+
+The example application can be cloned from here:
+
+[source%nowrap,console]
+----
+git clone https://github.com/Purple-Sky-Pirates/spring-rhoar-example
+----
+
+The application is a basis Spring Boot app, already configured to work with an external database for persisting data on OpenShift, however for local testing the application will still run, albeit without persisting changes. In the case of this example application that mean adding or editing fruit.
+
+[source%nowrap,console]
+----
+mvn spring-boot:run
+----
+
+Check out the application at http://localhost:8080
+
+The example application includes unit test that can be verified with:
+
+[source%nowrap,console]
+----
+mvn verify
+----
+
+== Deploy on OpenShift
+
+Create a new project and a PostgresSQL app: 
+
+[source%nowrap,console]
+----
+oc project example-project
+oc new-app -e POSTGRESQL_USER=luke -e POSTGRESQL_PASSWORD=secret -e POSTGRESQL_DATABASE=my_data openshift/postgresql:12-el8 --name=my-database
+----
+
+Examine the and review the `src/main/jkube/deployment.yml` and note the provided secret in this file `src/main/jkube/credentials-secret.yml`.
+
+
+Deploy the Spring Boot project using JKube:app-name: 
+
+[source%nowrap,console]
+----
+mvn package oc:deploy -Popenshift -DskipTests
+----
+
+Undeploy with: 
+
+[source%nowrap,console]
+----
+mvn package oc:undeploy -Popenshift -DskipTests
+----
+
+
