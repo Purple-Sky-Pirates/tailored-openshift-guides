@@ -24,7 +24,6 @@
 *** xref:02-0-codeready-containers.adoc#haproxy[HAProxy]
 *** xref:02-0-codeready-containers.adoc#client_config[Client Configuration]
 
-<<<<<<< HEAD
 * xref:04-0-python-fastapi.adoc[Python Web Framework Example]
 ** xref:04-1-fastapi-coding.adoc[Coding Python]
 *** xref:04-1-fastapi-coding.adoc#hello_world[Hello World]
@@ -38,7 +37,10 @@
 *** xref:04-4-helm.adoc#setup[OpenShift Project]
 *** xref:04-4-helm.adoc#helm_dep[Helm Deployment]
 *** xref:04-4-helm.adoc#helm_secret[Helm Secret]
-*** xref:04-4-helm.adoc#image_stream[Helm Image Stream]
+*** xref:04-4-helm.adoc#helm_image_stream[Helm Image Stream]
+*** xref:04-4-helm.adoc#helm_service[Helm Service]
+*** xref:04-4-helm.adoc#helm_route[Helm Route]
+
 ** xref:04-5-argocd.adoc[Working with ArgoCD]
 
 * xref:petclinic-architecture.adoc[Petclinic]

@@ -228,7 +228,7 @@ helm install my-chart .
 
 Hopefully, the secret and the deployment where created in the OpenShift project and all is working. There is still the Image Stream, Service and Route to be created. The process is the same, adding the templates and substituting values. By examining the examples created in a default `helm create helm-example`, this should start to make more sense.
 
-[#image_stream]
+[#helm_image_stream]
 === Helm Image Stream
 
 Now, copy the YAML from the "Administrator" view, "Builds" -> "Image Streams" and delete the Image stream (created earlier with `oc create is exampleforyou`).
