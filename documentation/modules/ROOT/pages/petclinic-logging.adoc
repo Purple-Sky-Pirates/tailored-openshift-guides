@@ -1,0 +1,87 @@
+= Logging
+:navtitle: Logging
+
+OpenShift provides some convenient mechanisms for viewing application logs.
+First and foremost is the ability to examine a *Pod*'s logs directly from the
+web console or via the command line.
+
+[#container_logs]
+== Background: Container Logs
+
+OpenShift is constructed in such a way that it expects containers to log all
+information to `STDOUT`. In this way, both regular and error information is
+captured via standardized Docker mechanisms. When exploring the *Pod*'s logs
+directly, you are essentially going through the Docker daemon to access the
+container's logs, through OpenShift's API.
+
+[NOTE]
+====
+In some cases, applications may not have been designed to send all of their
+information to `STDOUT` and `STDERR`. In many cases, multiple local log files
+are used. While OpenShift cannot parse any information from these files, nothing
+prevents them from being created, either. In other cases, log information is
+sent to some external system. Here, too, OpenShift does not prohibit these
+behaviors. If you have an application that does not log to `STDOUT`, either because it
+already sends log information to some "external" system or because it writes
+various log information to various files, fear not.
+====
+
+[#examining_logs]
+== Exercise: Examining Logs
+
+Since we already deployed our application, we can take some time to examine its
+logs. In the *Developer Perspective*, from Topology view, click the `petclinic` entry and then the *Resources* tab. You should see a *View Logs* link next to the *Pod* entry.
+
+image::petclinic-view-logs-link.png[View Logs for Pod]
+
+Click the *View Logs* link and you should see a nice view of the *Pod*'s logs:
+
+image::petclinic-logging-console-logs.png[Application Logs]
+
+WARNING: If you notice some errors in the log, that's okay. We'll remedy those in a little bit.
+
+You also have the option of viewing logs from the command line. Get the name of
+your *Pod*:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get pods
+----
+
+[.console-output]
+[source,bash]
+----
+NAME               READY     STATUS    RESTARTS   AGE
+petclinic-db556d45c-vf9dk   1/1       Running   0          5h
+----
+
+And then use the `logs` command to view this *Pod*'s logs:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc logs petclinic-db556d45c-vf9dk
+----
+
+You will see all of the application logs scroll on your screen:
+
+[.console-output]
+[source,bash]
+----
+2021-11-09 10:13:53.404  INFO 1 --- [           main] org.ehcache.jsr107.Eh107CacheManager     : Registering Ehcache MBean javax.cache:type=CacheStatistics,CacheManager=urn.X-ehcache.jsr107-default-config,Cache=vets
+2021-11-09 10:13:53.477  INFO 1 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2021-11-09 10:13:53.845  INFO 1 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2021-11-09 10:13:54.128  INFO 1 --- [           main] o.s.s.concurrent.ThreadPoolTaskExecutor  : Initializing ExecutorService 'applicationTaskExecutor'
+2021-11-09 10:13:54.211  INFO 1 --- [         task-1] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2021-11-09 10:13:54.296  INFO 1 --- [         task-1] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 5.4.20.Final
+2021-11-09 10:13:54.483  INFO 1 --- [         task-1] o.hibernate.annotations.common.Version   : HCANN000001: Hibernate Commons Annotations {5.1.0.Final}
+2021-11-09 10:13:54.682  INFO 1 --- [         task-1] org.hibernate.dialect.Dialect            : HHH000400: Using dialect: org.hibernate.dialect.H2Dialect
+2021-11-09 10:13:56.373  INFO 1 --- [         task-1] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000490: Using JtaPlatform implementation: [org.hibernate.engine.transaction.jta.platform.internal.NoJtaPlatform]
+2021-11-09 10:13:56.384  INFO 1 --- [         task-1] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2021-11-09 10:13:56.453  INFO 1 --- [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 13 endpoint(s) beneath base path '/actuator'
+2021-11-09 10:13:56.516  INFO 1 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+2021-11-09 10:13:56.517  INFO 1 --- [           main] DeferredRepositoryInitializationListener : Triggering deferred initialization of Spring Data repositories?
+2021-11-09 10:13:57.165  INFO 1 --- [           main] DeferredRepositoryInitializationListener : Spring Data repositories initialized!
+2021-11-09 10:13:57.188  INFO 1 --- [           main] o.s.s.petclinic.PetClinicApplication     : Started PetClinicApplication in 8.883 seconds (JVM running for 9.724)
+----

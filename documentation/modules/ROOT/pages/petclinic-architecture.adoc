@@ -1,0 +1,10 @@
+= Petclinic Architecture
+:navtitle: Petclinic Architecture
+
+This lab introduces you to the architecture of the Petclinic application used throughout this workshop, to get a better understanding of the things you'll be doing from a developer perspective. Petclinic is a simple spring boot application, which can be configured to connect to an external data source.  In this example we will attach to a MySQL database.
+
+image::petclinic-app-architecture.png[Application architecture,800,align="center"]
+
+
+The original source code for this application is located link:https://github.com/redhat-developer-demos/spring-petclinic/[here].
+

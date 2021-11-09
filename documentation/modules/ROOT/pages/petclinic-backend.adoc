@@ -1,0 +1,331 @@
+= Petclinic Backend
+:navtitle: Petclinic Backend
+
+Petclinic is a simple spring boot application, ad in this section we will configure our project to include a MySQL database and configure the application to connect to it.
+
+image::petclinic-app-architecture.png[Application architecture,800,align="center"]
+
+[#deploy_database_from_template]
+== Exercise: Deploying from an Openshift Template
+
+A *template* describes a set of objects that can be parameterized and processed to produce a list of objects for creation by OpenShift Container Platform.
+
+More information about *templates* can be found here: 
+{openshift-docs-url}/openshift_images/using-templates.html[Using Openshift Templates].
+
+You can instantiate a Template either from the OpenShift Console or using the `oc` CLI.  Use the tabs to choose your desired approach for instantiating a template.
+
+
+[tabs]
+====
+OpenShift Console::
++
+--
+We will select a database from the available *Templates* on the platform.  Firstly navigate to the Developer View, and click +Add.
+
+From here we select *Database*.
+
+image::petclinic-developer-add-database.png[Add Database]
+
+Now in the Developer Catalog we should select *MySQL (Ephemeral)*.
+
+image::petclinic-developer-select-database.png[Add Database]
+
+We will be presented with a description of the template along with links to documentation from the template provider.  Here we need to click to instantiate the template.
+
+image::petclinic-database-instantiate-template.png[Instantiate Template]
+
+We will be presented with parameters to fill in, so that the template can generate the required objects in Openshift.  Here you can use the following
+
+.MySQL Connection Username
+[source,bash,subs="+attributes,macros+"]
+----
+sqluser
+----
+
+.MySQL Connection Password
+[source,bash,subs="+attributes,macros+"]
+----
+Passw0rd!
+----
+
+.MySQL root user Password
+[source,bash,subs="+attributes,macros+"]
+----
+rootPassw0rd!
+----
+
+image::petclinic-database-template-1.png[Template Values 1]
+
+image::petclinic-database-template-2.png[Template Values 2]
+
+WARNING: Remember that when this pod is deleted that any data in it will be erased.  It is otherwise possible to use a database with persistence, where the data will be held, and therefore remain on pod deletions/restarts.
+
+
+
+--
+`oc` Command Line::
++
+--
+We can look for the templates which exist in the openshift namespace.
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get templates -n openshift | grep mysql-e
+----
+
+[.console-output]
+[source,bash]
+----
+cakephp-mysql-example                           An example CakePHP application with a MySQL database. For more information ab...   21 (4 blank)      8
+dancer-mysql-example                            An example Dancer application with a MySQL database. For more information abo...   18 (5 blank)      8
+mysql-ephemeral                                 MySQL database service, without persistent storage. For more information abou...   8 (3 generated)   3
+----
+
+The mysql-ephemeral is the one we need.  Now we need to instantiate the *Template*, we should first inspect the parameters that we may need to supply :
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get templates/mysql-ephemeral -n openshift -o yaml
+----
+
+[.console-output]
+[source,bash]
+----
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  template: mysql-ephemeral-template
+.....[All the objects that would be created are listed]
+parameters:
+- description: Password for the MySQL connection user.
+  displayName: MySQL Connection Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: MYSQL_PASSWORD
+  required: true
+- description: Password for the MySQL root user.
+  displayName: MySQL root user Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: MYSQL_ROOT_PASSWORD
+  required: true
+- description: Name of the MySQL database accessed.
+  displayName: MySQL Database Name
+  name: MYSQL_DATABASE
+  required: true
+  value: sampledb
+----
+
+Note the parameters and the ones we may need to change.  We will supply some on the command line as follows:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc new-app --template=mysql-ephemeral -p MYSQL_USER=mysqluser -p MYSQL_PASSWORD=Passw0rd! -p MYSQL_ROOT_PASSWORD=rootPassw0rd!
+----
+
+[.console-output]
+[source,bash]
+----
+--> Deploying template "openshift/mysql-ephemeral" to project quicktest
+
+     MySQL (Ephemeral)
+     ---------
+     MySQL database service, without persistent storage. For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mysql-container/blob/master/8.0/root/usr/share/container-scripts/mysql/README.md.
+     
+     WARNING: Any data stored will be lost upon pod destruction. Only use this template for testing
+
+     The following service(s) have been created in your project: mysql.
+     
+            Username: mysqluser
+            Password: Passw0rd!
+       Database Name: sampledb
+      Connection URL: mysql://mysql:3306/
+     
+     For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mysql-container/blob/master/8.0/root/usr/share/container-scripts/mysql/README.md.
+
+     * With parameters:
+        * Memory Limit=512Mi
+        * Namespace=openshift
+        * Database Service Name=mysql
+        * MySQL Connection Username=mysqluser
+        * MySQL Connection Password=Passw0rd!
+        * MySQL root user Password=rootPassw0rd!
+        * MySQL Database Name=sampledb
+        * Version of MySQL Image=8.0-el8
+
+--> Creating resources ...
+    secret "mysql" created
+    service "mysql" created
+    deploymentconfig.apps.openshift.io "mysql" created
+--> Success
+    Application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+     'oc expose service/mysql' 
+    Run 'oc status' to view your app.
+----
+
+WARNING: Remember that when this pod is deleted that any data in it will be erased.  It is otherwise possible to use a database with persistence, where the data will be held, and therefore remain on pod deletions/restarts.
+
+--
+====
+
+After a while we should see that we have a MySQL *DeploymentConfig* available in our project:
+
+image::petclinic-database-dc-topology.png[MySQL Database Deployment]
+
+[#linking_frontend_to_backend]
+== Exercise: Linking the Frontend to the Backend
+
+At this point we have the `petclinic` frontend available, but it is currently not using the database.  We need to configure the application to use the database.
+
+The template also created a service in the project, we can see this via the resources view:
+
+image::petclinic-database-service.png[MySQL Database Service]
+
+The `petclinic` app uses the following java properties - this is taken from https://github.com/redhat-developer-demos/spring-petclinic/blob/main/src/main/resources/application-mysql.properties:
+
+[source,bash]
+----
+database=mysql
+spring.datasource.url=${MYSQL_URL:jdbc:mysql://localhost/petclinic}
+spring.datasource.username=${MYSQL_USER:petclinic}
+spring.datasource.password=${MYSQL_PASS:petclinic}
+# SQL is written to be idempotent so this is safe
+spring.datasource.initialization-mode=always
+----
+
+It can be seen from here that we need to modify the properties as per our MySQL deployment.  We need to navigate to the petclinic deployment and find the `Edit Deployment` option in the `Actions` dropdown.
+
+image::petclinic-topology-edit-deployment.png[Edit Deployment]
+
+We will then be presented with the deployment configuration:
+
+image::petclinic-edit-deployment-1.png[Edit Deployment 1]
+
+image::petclinic-edit-deployment-2.png[Edit Deployment 2]
+
+Here we must add environment variables as follows:
+
+[source,bash]
+----
+SPRING_PROFILES_ACTIVE=mysql
+MYSQL_URL=jdbc:mysql://mysql:3306/sampledb
+MYSQL_USER=sqluser
+MYSQL_PASS=Passw0rd!
+----
+
+Hopefully your environmrnt variables section will look like this, you'll have to `+Add Value` a few times to add extra environment variables.
+
+image::petclinic-edit-deployment-envvars.png[Deployment EnvVars]
+
+Once saved by clicking the blue `Save` button.  This will result in the petclinic pod being deleted and a new version of the pod with updated configuration being rolled out by the replicaset.
+
+Let us confirm via the command-line that the environment variables have been applied to the pod.
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get pods -l app=petclinic -o yaml
+----
+
+It should be seen that the pod spec has been updated appropriately:
+
+[.console-output]
+[source,bash]
+----
+....
+  spec:
+    containers:
+    - env:
+      - name: SPRING_PROFILES_ACTIVE
+        value: mysql
+      - name: MYSQL_URL
+        value: jdbc:mysql://mysql:3306/sampledb
+      - name: MYSQL_USER
+        value: sqluser
+      - name: MYSQL_PASS
+        value: Passw0rd!
+      image: image-registry.openshift-image-registry.svc:5000/my-sandbox/petclinic@sha256:ea83cd22baee616d53b50cf557300b7c5ea7e7229de6075c59f79b9118dbdc66
+      imagePullPolicy: IfNotPresent
+      name: petclinic
+....
+----
+
+Congratulations!  We should now have a front-end petclinic pod talking to a backend mysql pod!
+
+[#verify_application]
+== Exercise: Verify Application
+
+How can we now verify that the application is connected to the back end?  We can check the database to see if it is being populated.  
+
+Let's navigate to the Pod and open up a Terminal...
+
+image::petclinic-database-pod-terminal.png[Database Pod Terminal]
+
+We can log into the database and run some sql commands...
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+mysql -u sqluser -h mysql -p
+use sampledb;
+show tables;
+----
+
+[.console-output]
+[source,bash]
+----
++--------------------+
+| Tables_in_sampledb |
++--------------------+
+| owners             |
+| pets               |
+| specialties        |
+| types              |
+| vet_specialties    |
+| vets               |
+| visits             |
++--------------------+
+7 rows in set (0.00 sec)
+----
+
+image::petclinic-database-rsh-login.png[DB rsh login]
+
+
+Great!  So now, let us use the front end of the application to manipulate and/or add some data.  
+
+On the main petclinic url, let's use the `FIND OWNERS` tab and click `Add Owner` from there.
+
+image::petclinic-add-owner-start.png[Add Owner Start]
+
+Let's add some sample user data:
+
+image::petclinic-add-owner.png[Add Owner]
+
+Here we can confirm that the user is listed on the front end.
+
+image::petclinic-list-owner.png[List Owner]
+
+Let's go back to our mysql pod terminal and query the database for our new user:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+SELECT * from owners where first_name = 'Some';
+----
+
+[.console-output]
+[source,bash]
+----
++----+------------+-----------+--------------+-----------+-----------+
+| id | first_name | last_name | address      | city      | telephone |
++----+------------+-----------+--------------+-----------+-----------+
+| 12 | Some       | User      | Some Address | Some City | 123456789 |
++----+------------+-----------+--------------+-----------+-----------+
+1 row in set (0.00 sec)
+----
+
+Excellent.  All verified.  Our front end is now talking to the MySQL backend!
+
