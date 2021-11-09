@@ -428,4 +428,20 @@ Or via the CLI example:
 oc login -u kubeadmin -p DhjTx-8gIJC-2h2tK-eksGY https://api.crc.testing:6443
 ----
 
+== Monitoring 
 
+To enable the `cluster-monitoring-operator`:
+
+
+[source%nowrap,console]
+----
+oc get clusterversion version -ojsonpath='{range .spec.overrides[*]}{.name}{"\n"}{end}' | nl -v 0
+----
+
+
+Start monitoring, alerting, and telemetry services using the identified numeric index for cluster-monitoring-operator:
+
+[source%nowrap,console]
+----
+oc patch clusterversion/version --type='json' -p '[{"op":"remove", "path":"/spec/overrides/<unmanaged-operator-index>"}]' -oyaml
+----

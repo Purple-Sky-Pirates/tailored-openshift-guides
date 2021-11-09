@@ -1,0 +1,106 @@
+= Containers and Python
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction to Podman
+
+With a simple example application, the next step is to run the code using a container. Docker is the most common tool however, Podman is Red Hat's open source equivalent. It so similar you can even install a package that allows you to invoke Podman commands using the `docker` command. 
+
+[source%nowrap,console]
+----
+$ sudo dnf install podman-docker 
+----
+
+On a Red Hat Enterprse Linux system, install Podman:
+
+[source%nowrap,console]
+----
+sudo dnf install podman buildah -y
+----
+
+=== Dockerfile
+
+Assuming the previous FastAPI example project is being used, move all the code into a new `code` directory.
+
+[source%nowrap,console]
+----
+mkdir code
+mv api main.py static templates views code
+----
+
+Now add a `Dockerfile`:
+
+[source%nowrap,docker]
+----
+FROM ubi8/python-39
+
+LABEL maintainer="Richard Walker"
+
+WORKDIR /code
+
+COPY code /code
+
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
+
+EXPOSE 8000
+
+CMD python main.py
+----
+
+Point the `FROM` image to an internal image that is accessible and meets the requirements.
+
+Ensure the Python Virtual Environment is activated:
+
+[source%nowrap,console]
+----
+$ . venv/bin/activate 
+----
+
+And freeze the requirements for the project, for example:
+
+[source%nowrap,console]
+----
+pip freeze > code/requirements.txt
+----
+
+The directory tree should look like this:
+
+[source%nowrap,console]
+----
+.
+├── code
+│   ├── api
+│   │   └── motd.py
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── static
+│   │   └── img
+│   │       └── fastapi_logo.png
+│   ├── templates
+│   │   ├── _base.html
+│   │   └── home.html
+│   └── views
+│       └── home.py
+├── Dockerfile
+└── venv
+----
+
+
+Use Podman to build a local image:
+
+[source%nowrap,console]
+----
+podman build -t local/exampleforyou:latest .
+----
+
+Use `podman images` to list local images and `podman rmi <IMAGE>` to delete them.
+
+Run the application using Podman, passing in the environment variable at runtime with:
+
+[source%nowrap,console]
+----
+podman run -d -p 8000:8000 -e ENV_SECRET="MyTopSecretToken" local/exampleforyou:latest
+----
+
+That's it! Test the application at http://localhost:8000/

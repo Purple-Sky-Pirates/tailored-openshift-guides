@@ -1,0 +1,451 @@
+= Coding Python with FastAPI
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction 
+
+=== Coding on RHEL8
+
+Using Red Hat Enterprise Linux 8, enable and use a more current version of Python 3 by enabling a module stream:
+
+[source%nowrap,console]
+----
+$ sudo dnf module enable python38
+----
+
+Create a new project working directory:
+
+[source%nowrap,console]
+----
+$ mkdir exampleforyou && cd exampleforyou
+----
+
+Create a new virtual environment, explicitly referencing, in this case Python 3.8:
+
+[source%nowrap,console]
+----
+$ python3.8 -m venv venv
+----
+
+Activate the virtual environment and install `fastapi` and `unicorn`. Uvicorn is a lightning-fast ASGI server implementation used to run the application:
+
+[source%nowrap,console]
+----
+$ source venv/bin/activate
+
+$ pip install --upgrade pip
+$ pip install fastapi uvicorn
+----
+
+[#hello_world]
+=== Hello World
+
+Create a `main.py`, this is the most basic example:
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+
+[source%nowrap,python]
+----
+import fastapi
+import uvicorn
+
+motd = fastapi.FastAPI()
+
+
+@motd.get('/')
+def message():
+    return {
+        'message': "Hello FastAPI!"
+    }
+
+
+if __name__ == '__main__':
+    uvicorn.run(motd, host='0.0.0.0', port=8000)
+----
+
+The example includes the two imports for FastAPI and a Unicorn, a server to run the application. Then it creates an instance of a FastAPI object called hello and defines a function decorated with the HTTP verb GET. Finally, it starts using the FastAPI object and optionally the host and port definition.
+
+The application can be started either using `uvicorn`:
+
+[source%nowrap,console]
+----
+$ uvicorn main:motd --reload --port 8000
+----
+
+Or executing the `main.py`:
+
+[source%nowrap,console]
+----
+$ python main.py
+----
+
+[#routing]
+=== Add Routing
+
+It is a good idea to structure a project from the beginning. APIs can live under a directory and configured using a router.
+
+Create a directory in the project:
+
+[source%nowrap,console]
+----
+$ mkdir api
+----
+
+Move and modify the decorator in this case also adding a new context path:
+
+[source%nowrap,console]
+----
+$ vi api/motd.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+
+router = fastapi.APIRouter()
+
+
+@router.get('/api/motd')
+def message():
+    return {
+        'message': "Hello FastAPI!"
+    }
+----
+
+And update `main.py`, for clarity calling the FastAPI object `main_app` and some restructure using the function `configure()` to include APIs:
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+import uvicorn
+
+from api import motd
+
+main_app = fastapi.FastAPI()
+
+
+def configure():
+    configure_routing()
+
+
+def configure_routing():
+    main_app.include_router(motd.router)
+
+
+if __name__ == '__main__':
+    configure()
+    uvicorn.run(main_app, host='0.0.0.0', port=8000)
+else:
+    configure()
+----
+
+This structure lays the foundation for a project to evolve and mature.
+
+The application can be started either using uvicorn:
+
+[source%nowrap,console]
+----
+$ uvicorn main:main_app --reload --port 8000
+----
+
+Or executing the main.py:
+
+[source%nowrap,console]
+----
+$ python main.py
+----
+
+The home page will now display "Not Found" but the API is now available at http://127.0.0.1:8000/api/motd.
+
+[#home_page]
+=== Add a home page
+
+FastAPI support Jinja2 templates for rendering HTML
+
+To use Jinja2 templates, install the package:
+
+
+[source%nowrap,console]
+----
+$ pip install jinja2
+----
+
+Create a `views` and `templates` directory in the project:
+
+
+[source%nowrap,console]
+----
+$ mkdir views templates
+----
+
+Using Jinja2 means you can break the HTML into reusable fragments, this should seem a familiar pattern from other web frameworks. Add a basic HTML template for base and home:
+
+[source%nowrap,console]
+----
+$ vi templates/_base.html
+----
+
+[source%nowrap,html]
+----
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FastAPI</title>
+</head>
+<body>
+    {% block content %}
+    {% endblock %}
+</body>
+</html>
+----
+
+[source%nowrap,console]
+----
+$ vi templates/home.html
+----
+
+[source%nowrap,html]
+----
+{% extends "_base.html" %}
+
+{% block content %}
+
+<h1>Hello FastAPI!</h1>
+<a href="/api/motd">Message Of The Day API</a>
+
+{% endblock %}
+----
+
+Using template `TemplateResponse` add a home view `home.py`:
+
+
+[source%nowrap,console]
+----
+$ vi views/home.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+from starlette.requests import Request
+from starlette.templating import Jinja2Templates
+
+router = fastapi.APIRouter()
+templates = Jinja2Templates('templates')
+
+
+@router.get('/')
+def home(request: Request):
+    return templates.TemplateResponse('home.html', {'request': request})
+----
+
+Update `main.py` to import the home view and configure the routing:
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+import uvicorn
+from api import motd
+from views import home # New
+
+main_app = fastapi.FastAPI()
+
+def configure():
+    configure_routing()
+
+
+def configure_routing():
+    main_app.include_router(motd.router)
+    main_app.include_router(home.router) # New
+
+
+if __name__ == '__main__':
+    configure()
+    uvicorn.run(main_app, host='0.0.0.0', port=8000)
+else:
+    configure()
+
+----
+
+Running the server and visiting http://127.0.0.1:8000 now should return a regular HTML page.
+
+[#static_files]
+=== Static files
+
+To include a static directory to include style sheets and images for example, FastAPI uses a mount concept.
+
+Install the dependency for mounting `aiofiles`:
+
+
+[source%nowrap,console]
+----
+$ pip install aiofiles
+----
+
+Create a directory to keep static files, this example demonstrates using an image:
+
+[source%nowrap,console]
+----
+$ mkdir -p static/img
+----
+
+NOTE: I copied an image called `fastapi_logo.png` into `static/img`
+
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+Add the following import:
+
+
+[source%nowrap,python]
+----
+from starlette.staticfiles import StaticFiles
+----
+
+Add the following `/static` mount in the `configure_routing()` function:
+
+
+[source%nowrap,python]
+----
+def configure_routing():
+    main_app.mount('/static', StaticFiles(directory='static'), name='static') # New
+    main_app.include_router(motd.router)
+    main_app.include_router(home.router)
+----
+
+In the Jinga2 HTML template, static files can be referenced, in `templates/home.html` for example, like this:
+
+
+[source%nowrap,html]
+----
+<img src="static/img/fastapi_logo.png" alt="FastAPI">
+----
+
+[#env_vars]
+=== Environment Variables
+
+There are many approaches to managing secret variables such as passwords and access tokens. With the long term in mind, I prefer to using environment variables. This approach avoids ever including such secret in source code by mistake and set a good foundation for using containers at a later stage.
+
+[source%nowrap,console]
+----
+$ pip install environs
+----
+
+In this example set a local environment variable `ENV_SECRET`:
+
+[source%nowrap,console]
+----
+$ export ENV_SECRET="MyTopSecretToken"
+----
+
+Edit `main.py`:
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+Add the following import:
+
+[source%nowrap,python]
+----
+from environs import Env
+----
+
+And the following function:
+
+[source%nowrap,python]
+----
+def configure_env_vars():
+    env = Env()
+    env.read_env()
+    if not env("ENV_SECRET"):
+        print(f"WARNING: environment variable ENV_SECRET not found")
+        raise Exception("environment variable ENV_SECRET not found.")
+    else:
+        home.secret = env("ENV_SECRET")
+----
+
+This new function needs calling so add it to the function `configure()`:
+
+[source%nowrap,python]
+----
+def configure():
+    configure_routing()
+    configure_env_vars()
+----
+
+If the environment variable `ENV_SECRET` is set, the function sets the value of `home.secret`, so add the following to `views/home.py`:
+
+[source%nowrap,console]
+----
+$ vi views/home.py
+----
+
+The following import:
+
+[source%nowrap,python]
+----
+from typing import Optional
+----
+
+And define the optional secret:
+
+[source%nowrap,python]
+----
+secret: Optional[str] = None
+----
+
+To test it works and to see how values can be passed to a template, update the view to return the value:
+
+[source%nowrap,python]
+----
+@router.get('/')
+def home(request: Request):
+    return templates.TemplateResponse('home.html', {'request': request, 'display_secret': secret})
+----
+
+Finally, edit the home template to display the secret:
+
+[source%nowrap,console]
+----
+$ vi templates/home.html
+----
+
+[source%nowrap,html]
+----
+<p>SECRET: {{ display_secret }}</p>
+----
+
+Running the application now should display the secret on the home page. This demonstrates how values can be obtained in a safe way based on the environment and decouple environmental differences. When using Docker, Podman, Kubernetes or OpenShift this approach will pay dividends.
+
+Environs also supports reading a hidden file called `.env` in the root of the project, rather that exporting variables at the user level, they can be defined at a project level. Just remember never to include `.env` in version control!
+
+
+[source%nowrap,console]
+----
+$ vi .env
+----
+
+[source%nowrap,text]
+----
+export ENV_SECRET="MyTopSecretToken"
+----

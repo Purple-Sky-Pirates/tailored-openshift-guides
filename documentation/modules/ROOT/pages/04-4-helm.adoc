@@ -1,0 +1,333 @@
+= Helm for OpenShift
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction to Helm
+
+Like `pip` for Python and `dnf` or `yum` for Linux, Helm is like a package management system for Kubernetes. 
+
+Download the client CLI tool from:
+
+[source%nowrap,console]
+----
+wget https://mirror.openshift.com/pub/openshift-v4/clients/helm/latest/
+----
+
+[source%nowrap,console]
+----
+sudo mv ~/Downloads/helm-linux-amd64 /usr/local/bin/helm
+sudo chmod +x /usr/local/bin/helm
+----
+
+[source%nowrap,console]
+----
+helm version
+----
+
+=== Creating a Helm Chart from scratch
+
+Using the OpenShift "deployment" example from previously, a new or similar project and deployment could be done by copying and modified the image stream, deployment, service and route and applying them with `oc create -f <FILENAME>`.
+
+[source%nowrap,console]
+----
+deployment.yaml
+imagestream.yaml
+route.yaml
+service.yaml
+----
+
+Helm enables us to template those files for reuse!
+
+=== Helm Deployment
+
+[#setup]
+=== OpenShift Setup
+
+Start with a new OpenShift project:
+
+[source%nowrap,console]
+----
+oc new-project helm-example
+----
+
+[source%nowrap,console]
+----
+helm create helm-example
+----
+
+Create an Image Stream:
+
+[source%nowrap,console]
+----
+oc create is exampleforyou
+----
+
+Log into the image registry as a user, in this case `developer`, and tag/push an image:
+
+[source%nowrap,console]
+----
+podman login -u developer -p $(oc whoami -t) --tls-verify=false
+default-route-openshift-image-registry.apps-crc.testing
+
+podman tag localhost/local/exampleforyou default-route-openshift-image-registry.apps-crc.testing/helm-example/exampleforyou:latest
+
+podman push default-route-openshift-image-registry.apps-crc.testing/helm-example/exampleforyou:latest
+----
+
+[#helm_dep]
+=== Helm Deployment
+
+Create a fresh helm chart:
+
+[source%nowrap,console]
+----
+helm create example-chart && cd example-chart
+----
+
+Remove the contents of `templates` directory:
+
+[source%nowrap,console]
+----
+rm -rf templates/*
+----
+
+Add `templates/deployment.yaml`:
+
+[source%nowrap,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-openshift
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fastapi-openshift
+  template:
+    metadata:
+      labels:
+        app: fastapi-openshift
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: exampleforyou
+        image: default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ENV_SECRET
+          value: MyTopSecret
+----
+
+Notice the section:
+
+[source%nowrap,yaml]
+----
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+----
+
+For Helm to be able to access the registry it requires registry credentials stored in a secret define as `docker-registry`. Update the server, username and password (obtained with oc whoami -t):
+
+[source%nowrap,console]
+----
+oc create secret docker-registry ocpregcred --docker-server=default-route-openshift-image-registry.apps-crc.testing --docker-username=developer --docker-password=sha256~axVpjgVL2YFfCxIPRQQd611my13jAek2GnbECUQHmag
+----
+
+And add the credential in `values.yaml`:
+
+[source%nowrap,yaml]
+----
+imagePullSecrets:
+  - name: ocpregcred
+----
+
+Install the Helm chart into the OpenShift project:
+
+[source%nowrap,console]
+----
+helm install my-chart .
+----
+
+You should see the deployment pull the image, and run a pod:
+
+[source%nowrap,console]
+----
+oc get pods
+NAME                                 READY   STATUS    RESTARTS   AGE
+fastapi-openshift-7954fcc679-qlxw2   1/1     Running   0          2m41s
+----
+
+Uninstall the helm chart:
+
+[source%nowrap,console]
+----
+helm uninstall my-chart
+----
+
+[#helm_secret]
+=== Helm Secret
+
+It's worth noting that using helm is great for cleaning up too!
+
+You could now copy the YAML from the OpenShift web console of the secret added, and include it in Helm. The docker-registry secret is an encoded JSON, lets configure helm to add the secret.
+
+NOTE: Do not actually store secrets in Helm Charts/version control, this is for example purposes!!!
+
+Add `templates/secret.yaml`
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ocpregcred
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ template "imagePullSecret" . }}
+----
+
+To convert to base64 from values defined in `values.yaml`, add a helper to a file called `templates/_helpers.tpl`:
+
+[source%nowrap,console]
+----
+{{- define "imagePullSecret" }}
+{{- printf "{\"auths\": {\"%s\": {\"auth\": \"%s\"}}}" .Values.imageCredentials.registry (printf "%s:%s" .Values.imageCredentials.username .Values.imageCredentials.password | b64enc) | b64enc }}
+{{- end }}
+----
+
+And finally, add the values in `values.yaml`:
+
+[source%nowrap,yaml]
+----
+imageCredentials:
+  registry: default-route-openshift-image-registry.apps-crc.testing
+  username: developer
+  password: sha256~axVpjgVL2YFfCxIPRQQd611my13jAek2GnbECUQHmag
+----
+
+Use the following command to review the resulting output generating from the templates:
+
+[source%nowrap,console]
+----
+helm template my-chart .
+----
+
+Install the chart again:
+
+[source%nowrap,console]
+----
+helm install my-chart .
+----
+
+Hopefully, the secret and the deployment where created in the OpenShift project and all is working. There is still the Image Stream, Service and Route to be created. The process is the same, adding the templates and substituting values. By examining the examples created in a default `helm create helm-example`, this should start to make more sense.
+
+[#image_stream]
+=== Helm Image Stream
+
+Now, copy the YAML from the "Administrator" view, "Builds" -> "Image Streams" and delete the Image stream (created earlier with `oc create is exampleforyou`).
+
+Create `templates/imagestream.yaml`:
+
+[source%nowrap,console]
+----
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: exampleforyou
+  namespace: helm-example
+spec: {}
+status:
+  dockerImageRepository: 'image-registry.openshift-image-registry.svc:5000/example-deployment/exampleforyou'
+  publicDockerImageRepository: default-route-openshift-image-registry.apps-crc.testing/helm-example/exampleforyou
+  tags:
+    - tag: latest
+      items:
+        - created: '2021-11-09T14:31:50Z'
+          dockerImageReference: >-
+            image-registry.openshift-image-registry.svc:5000/helm-example/exampleforyou@sha256:468316ea625832cc92d7b801bee9c95803e25fcb542238677d2e3cb69fc2dc22
+          image: >-
+            sha256:468316ea625832cc92d7b801bee9c95803e25fcb542238677d2e3cb69fc2dc22
+          generation: 1
+----
+
+View the outcome:
+
+[source%nowrap,console]
+----
+helm template my-chart .
+----
+
+Install the chart again:
+
+[source%nowrap,console]
+----
+helm install my-chart .
+----
+
+[#helm_service]
+=== Helm Service
+
+If you know who to obtain a unique and valid cluster IP Address from your service, go ahead and add `templates/service.yaml`:
+
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-openshift-svc
+  namespace: helm-example
+spec:
+  clusterIP: 10.217.5.144
+  clusterIPs:
+  - 10.217.5.144
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: fastapi-openshift
+  sessionAffinity: None
+  type: ClusterIP
+----
+
+
+[#helm_route]
+=== Helm Route
+
+Finally, add the `templates/service.yaml`
+
+[source%nowrap,yaml]
+----
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: fastapi-openshift-svc
+  namespace: helm-example
+spec:
+  host: fastapi-openshift-svc-helm-example.apps-crc.testing
+  port:
+    targetPort: 8000
+  to:
+    kind: Service
+    name: fastapi-openshift-svc
+    weight: 100
+  wildcardPolicy: None
+----
+
+
+[#helm_templating]
+=== Helm Templating
+
+Now there is a fully working set of templates for deploying a complete OpenShift Deployment, it's quite simple now to work through these templates and substituting parameters and defining values in `values.yaml`. The helm chart should eventualy become application agnostic, and therefore reusable for various applications.

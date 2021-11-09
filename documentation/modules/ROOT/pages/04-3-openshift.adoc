@@ -1,0 +1,255 @@
+= Deploying on OpenShift
+include::_attributes.adoc[]
+
+[#introduction]
+== Deploying on OpenShift
+
+Time to deploy the applications to OpenShift, there are many options but the first logical method would be to tag and push the previous container image example to a container registry and use that.
+
+
+The example assume the OpenShift Image Registry is enabled, a quick check of this:
+
+[source%nowrap,console]
+----
+oc project openshift-image-registry
+oc get routes
+----
+
+Regular users may need extra police for pushing images:
+
+[source%nowrap,console]
+----
+oc policy add-role-to-user registry-viewer <USERNAME>
+oc policy add-role-to-user registry-editor <USERNAME>
+----
+
+Obtain the image registry host:
+
+[source%nowrap,console]
+----
+HOST=$(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}')
+----
+
+[#container_images]
+=== Using Container Images
+
+==== Deployment
+
+As Cluster admin, make sure users have permission to work with the OpenShift registry:
+
+[source%nowrap,console]
+----
+oc policy add-role-to-user registry-viewer developer
+oc policy add-role-to-user registry-editor developer
+----
+
+Log into the image registry as a user, in this case `developer`:
+
+[source%nowrap,console]
+----
+podman login -u developer -p $(oc whoami -t) --tls-verify=false default-route-openshift-image-registry.apps-crc.testing
+----
+
+Tag and push an image:
+
+[source%nowrap,console]
+----
+podman tag localhost/local/exampleforyou default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
+podman push default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
+----
+
+Create a new project:
+
+[source%nowrap,console]
+----
+oc new-project example-deployment
+----
+
+Create a new image stream `imagestream.yaml`:
+
+[source%nowrap,yaml]
+----
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: exampleforyou
+  namespace: example-deployment
+spec:
+  lookupPolicy:
+    local: false
+status:
+  dockerImageRepository: 'image-registry.openshift-image-registry.svc:5000/example-deployment/exampleforyou'
+  publicDockerImageRepository: >-
+    default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou
+  tags:
+    - tag: latest
+      items:
+        - dockerImageReference: >-
+            image-registry.openshift-image-registry.svc:5000/example-deployment/exampleforyou:lastest
+
+----
+
+[source%nowrap,console]
+----
+oc create -f imagestream.yaml
+----
+
+Create a new deployment, specifying the port and environment variable:
+
+
+[source%nowrap,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-openshift
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fastapi-openshift
+  template:
+    metadata:
+      labels:
+        app: fastapi-openshift
+    spec:
+      containers:
+      - name: exampleforyou
+        image: default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ENV_SECRET
+          value: MyTopSecret
+----
+
+To capture and define a service:
+
+[source%nowrap,yaml]
+----
+oc expose deploy fastapi-openshift --name fastapi-openshift-svc
+----
+
+[source%nowrap,yaml]
+----
+oc get svc fastapi-openshift-svc -o yaml
+----
+
+Then, for future reference create a `service.yaml`:
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-openshift-svc
+  namespace: example-deployment
+spec:
+  clusterIP: 10.217.4.172
+  clusterIPs:
+  - 10.217.4.172
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: fastapi-openshift
+  sessionAffinity: None
+  type: ClusterIP
+----
+
+And repeat the same for the route, first exposing a route via the `oc` command:
+
+
+[source%nowrap,yaml]
+----
+oc expose svc/fastapi-openshift-svc
+----
+
+And obtaining the yaml for future reference:
+
+[source%nowrap,yaml]
+----
+oc get route fastapi-openshift-svc -o yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: fastapi-openshift-svc
+  namespace: example-deployment
+spec:
+  host: fastapi-openshift-svc-example-deployment.apps-crc.testing
+  port:
+    targetPort: 8000
+  to:
+    kind: Service
+    name: fastapi-openshift-svc
+    weight: 100
+  wildcardPolicy: None
+----
+
+
+==== Deployment Config
+
+Create a new OpenShift project:
+
+[source%nowrap,console]
+----
+oc new-project example1
+----
+
+Log in to the OpenShift registry with Podman:
+
+[source%nowrap,console]
+----
+HOST=$(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}')
+podman login -u kubeadmin -p $(oc whoami -t) --tls-verify=false $HOST
+----
+
+Create an Image Stream with your project:
+
+[source%nowrap,console]
+----
+oc create is exampleforyou
+----
+
+When tagging an image it follows this format
+
+[source%nowrap,console]
+----
+podman tag <LOCAL_IMAGE_NAME> <REGISTRY_URL>/<PROJECT_NAME>/<IMAGE_STREAM>:<VERSION>
+----
+
+For example:
+
+[source%nowrap,console]
+----
+podman tag localhost/local/exampleforyou default-route-openshift-image-registry.apps-crc.testing/example1/exampleforyou:latest
+
+podman push default-route-openshift-image-registry.apps-crc.testing/example1/exampleforyou:latest
+----
+
+Next, create a new application as a deployment config:
+
+[source%nowrap,console]
+----
+oc new-app --as-deployment-config exampleforyou:latest -e ENV_SECRET="MyTopSecretToken"
+----
+
+The previous command will provides information including the exposure of the service:
+
+[source%nowrap,console]
+----
+oc expose service/exampleforyou
+oc get routes
+----
+
+
+The application should now be deployed and accessible, for example: http://exampleforyou-example1.apps-crc.testing/
