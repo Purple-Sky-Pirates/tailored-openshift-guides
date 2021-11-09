@@ -1,0 +1,124 @@
+= Routes
+:navtitle: Routes
+
+In this lab, we're going to make our application visible to the end users, so they can access it.
+
+image::petclinic-app-architecture.png[Application architecture,800,align="center"]
+
+[#routes]
+== Background: Routes
+
+While *Services* provide internal abstraction and load balancing within an
+OpenShift environment, sometimes clients (users, systems, devices, etc.)
+**outside** of OpenShift need to access an application. The way that external
+clients are able to access applications running in OpenShift is through the
+OpenShift routing layer. And the data object behind that is a *Route*.
+
+The default OpenShift router (HAProxy) uses the HTTP header of the incoming
+request to determine where to proxy the connection. You can optionally define
+security, such as TLS, for the *Route*. If you want your *Services*, and, by
+extension, your *Pods*, to be accessible from the outside world, you need to
+create a *Route*.
+
+[#creating_a_route]
+== Exercise: Creating a Route
+
+You may remember that when we deployed the `petclinic` application, we un-checked the checkbox to 
+create a *Route*. Normally it would have been created for us automatically. Fortunately, creating a *Route* is a pretty straight-forward process. 
+
+You can create a Route either from the OpenShift Console or using the `oc` CLI.  Use the tabs to choose your desired approach for adding the route.
+
+[tabs]
+====
+OpenShift Console::
++
+--
+. Via the *Administrator Perspective*, just click *Networking -> Routes* and then the *Create Route* button.
+. Insert *petclinic* in *Name* field.
+. From *Service* field, select *petclinic*. For *Target Port*, select *8080*.
+. In *Security* section, check *Secure route*. Select *Edge* from *TLS Termination* list.
+. Leave all other fields blank and click *Create*:
++
+image::petclinic-route-create-1.png[Create Route Part 1,align="center"]
++
+image::petclinic-route-create-2.png[Create Route Part 2,align="center"]
++
+image::petclinic-route-create-3.png[Create Route Part 2,align="center"]
+
+TIP: The TLS certificate for cluster Apps domains is used by default, so you don't need to add any certificate. In case you would like a custom domain resolving to OpenShift Nodes hosting Routers, you can add certificates also on a per-route basis.
+
+When creating a *Route*, some other options can be provided, like the hostname and path for the *Route* or the other TLS configurations.
+
+--
+`oc` Command Line::
++
+--
+We are looking to simply `expose` the *Service*, but first we need to verify that we don't already have any existing *Routes*:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get routes
+----
+
+[.console-output]
+[source,bash]
+----
+No resources found.
+----
+
+Now we need to get the *Service* name to expose:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get services
+----
+
+[.console-output]
+[source,bash]
+----
+NAME       CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+petclinic   ClusterIP   172.30.34.34   <none>        8080/TCP,8443/TCP,8778/TCP   126m
+----
+
+Once we know the *Service* name, creating a *Route* is a simple one-command task:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc create route edge petclinic --service=petclinic --port=8080
+----
+
+[.console-output]
+[source,bash]
+----
+route.route.openshift.io/petclinic exposed
+----
+
+--
+====
+
+Verify the *Route* was created with the following command:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get route
+----
+
+[.console-output]
+[source,bash,subs="+attributes,macros+"]
+----
+NAME       HOST/PORT                            PATH      SERVICES   PORT       TERMINATION   WILDCARD
+petclinic   petclinic-%PROJECT%.%CLUSTER_SUBDOMAIN%             petclinic   8080-tcp   edge          None
+----
+
+You can also verify the *Route* in the *Developer Perspective* under the *Resources* tab for your `petclinic` deployment configuration. Also note that there is a decorator icon on the `petclinic` visualization now. If you click that, it will open the URL for your *Route* in a browser.
+
+image::petclinic-route-created.png[Route created]
+
+This application is now available at the URL shown in the Developer Perspective. Click the link and you will see it.
+
+image::petclinic-home-screen.png[Petclinic Home Screen]
+

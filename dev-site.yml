@@ -14,6 +14,8 @@ content:
 asciidoc:
   attributes:
     title: OpenShift Starter Guides(Dev Mode)
+    petclinic-image: quay.io/swinches/spring-petclinic
+    petclinic-version: 1.0.0
   extensions:
     - ./lib/remote-include-processor.js
     - ./lib/tab-block.js
