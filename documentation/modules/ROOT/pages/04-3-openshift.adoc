@@ -6,8 +6,7 @@ include::_attributes.adoc[]
 
 Time to deploy the applications to OpenShift, there are many options but the first logical method would be to tag and push the previous container image example to a container registry and use that.
 
-
-The example assume the OpenShift Image Registry is enabled, a quick check of this:
+The example assume the OpenShift Image Registry is enabled, a quick check of this (using a CLusterAdmin user):
 
 [source%nowrap,console]
 ----
@@ -50,20 +49,36 @@ Log into the image registry as a user, in this case `developer`:
 podman login -u developer -p $(oc whoami -t) --tls-verify=false default-route-openshift-image-registry.apps-crc.testing
 ----
 
-Tag and push an image:
-
-[source%nowrap,console]
-----
-podman tag localhost/local/exampleforyou default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
-podman push default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
-----
-
 Create a new project:
 
 [source%nowrap,console]
 ----
-oc new-project example-deployment
+oc new-project fastapi-openshift-project
 ----
+
+Tag and push an image:
+
+[source%nowrap,console]
+----
+podman tag localhost/local/fastapi-quickstart default-route-openshift-image-registry.apps-crc.testing/fastapi-openshift-project/fastapi-quickstart:latest
+podman push default-route-openshift-image-registry.apps-crc.testing/fastapi-openshift-project/fastapi-quickstart:latest
+----
+
+Once the push is successfully, there will be a new image stream available:
+
+[source%nowrap,console]
+----
+oc get is
+----
+
+You can use it as a template in the future:
+
+[source%nowrap,console]
+----
+oc get is fastapi-quickstart -o yaml
+----
+
+For this example, all OpenShift files will be created in `ocp` as part of the `fastapi-quickstart` project in Git.
 
 Create a new image stream `imagestream.yaml`:
 
@@ -72,55 +87,69 @@ Create a new image stream `imagestream.yaml`:
 kind: ImageStream
 apiVersion: image.openshift.io/v1
 metadata:
-  name: exampleforyou
-  namespace: example-deployment
+  name: fastapi-quickstart-is
+  namespace: fastapi-openshift-project
 spec:
   lookupPolicy:
     local: false
 status:
-  dockerImageRepository: 'image-registry.openshift-image-registry.svc:5000/example-deployment/exampleforyou'
-  publicDockerImageRepository: >-
-    default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou
+  dockerImageRepository: image-registry.openshift-image-registry.svc:5000/fastapi-openshift-project/fastapi-quickstart
+  publicDockerImageRepository: default-route-openshift-image-registry.apps-crc.testing/fastapi-openshift-project/fastapi-quickstart
   tags:
-    - tag: latest
-      items:
-        - dockerImageReference: >-
-            image-registry.openshift-image-registry.svc:5000/example-deployment/exampleforyou:lastest
-
+  - items:
+    - created: "2021-11-16T16:43:10Z"
+      dockerImageReference: image-registry.openshift-image-registry.svc:5000/fastapi-openshift-project/fastapi-quickstart@sha256:075ada2f1393737e28a2951099a9b52420d8b717da07a8bc92a96d1cbf6b9ef7
+      generation: 1
+      image: sha256:075ada2f1393737e28a2951099a9b52420d8b717da07a8bc92a96d1cbf6b9ef7
 ----
+
+For reference:
 
 [source%nowrap,console]
 ----
 oc create -f imagestream.yaml
 ----
 
-Create a new deployment, specifying the port and environment variable:
+Use `oc get is` to see image streams.
 
+Create a new deployment, specifying the port and environment variable `deployment.yaml`:
 
 [source%nowrap,yaml]
 ----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fastapi-openshift
+  name: fastapi-deployment
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: fastapi-openshift
+      app: fastapi-deployment
   template:
     metadata:
       labels:
-        app: fastapi-openshift
+        app: fastapi-deployment
     spec:
       containers:
-      - name: exampleforyou
-        image: default-route-openshift-image-registry.apps-crc.testing/example-deployment/exampleforyou:latest
+      - name: fastapi-quickstart
+        image: image-registry.openshift-image-registry.svc:5000/fastapi-openshift-project/fastapi-quickstart:latest
         ports:
         - containerPort: 8000
         env:
-        - name: ENV_SECRET
-          value: MyTopSecret
+        - name: ENV_STRING
+          value: HelloOpenShift
+----
+
+[source%nowrap,yaml]
+----
+oc create -f deployment.yaml
+----
+
+See the progress/status:
+
+[source%nowrap,yaml]
+----
+oc get pods
 ----
 
 To capture and define a service:
@@ -164,7 +193,6 @@ spec:
 
 And repeat the same for the route, first exposing a route via the `oc` command:
 
-
 [source%nowrap,yaml]
 ----
 oc expose svc/fastapi-openshift-svc
@@ -194,7 +222,6 @@ spec:
     weight: 100
   wildcardPolicy: None
 ----
-
 
 ==== Deployment Config
 
@@ -253,3 +280,12 @@ oc get routes
 
 
 The application should now be deployed and accessible, for example: http://exampleforyou-example1.apps-crc.testing/
+
+
+
+=== Troubelshooting
+
+[source%nowrap,console]
+----
+Error: container create failed: time="2021-11-16T15:34:14Z" level=error msg="container_linux.go:380: starting container process caused: exec: \"container-entrypoint\": executable file not found in $PATH"
+----

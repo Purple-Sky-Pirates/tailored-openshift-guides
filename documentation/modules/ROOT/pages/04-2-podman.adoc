@@ -18,17 +18,26 @@ On a Red Hat Enterprse Linux system, install Podman:
 sudo dnf install podman buildah -y
 ----
 
-=== Dockerfile
-
-Assuming the previous FastAPI example project is being used, move all the code into a new `code` directory.
+Explore the `ubi/python-39` image:
 
 [source%nowrap,console]
 ----
-mkdir code
-mv api main.py static templates views code
+podman run -it ubi8/python-39:latest /bin/bash
 ----
 
-Now add a `Dockerfile`:
+[source%nowrap,console]
+----
+(app-root) pwd
+/opt/app-root/src
+(app-root) ls -al
+(app-root) exit
+----
+
+=== Dockerfile
+
+The previous exploration tell us that the default current working directory is `/opt/app-root/src`, and we know OpenShift will not run containers as `root`.ca
+
+Add a `Dockerfile`:
 
 [source%nowrap,docker]
 ----
@@ -36,12 +45,17 @@ FROM ubi8/python-39
 
 LABEL maintainer="Richard Walker"
 
-WORKDIR /code
+USER root
 
-COPY code /code
+WORKDIR /opt/app-root/src
+
+COPY . /opt/app-root/src
 
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+RUN chown -R 1001:1001 /opt/app-root/src
+
+USER 1001
 
 EXPOSE 8000
 
@@ -57,11 +71,11 @@ Ensure the Python Virtual Environment is activated:
 $ . venv/bin/activate 
 ----
 
-And freeze the requirements for the project, for example:
+If not already done, freeze the requirements for the project, for example:
 
 [source%nowrap,console]
 ----
-pip freeze > code/requirements.txt
+pip freeze > requirements.txt
 ----
 
 The directory tree should look like this:
@@ -69,38 +83,42 @@ The directory tree should look like this:
 [source%nowrap,console]
 ----
 .
-├── code
-│   ├── api
-│   │   └── motd.py
-│   ├── main.py
-│   ├── requirements.txt
-│   ├── static
-│   │   └── img
-│   │       └── fastapi_logo.png
-│   ├── templates
-│   │   ├── _base.html
-│   │   └── home.html
-│   └── views
-│       └── home.py
+├── api
+│   └── motd.py
 ├── Dockerfile
+├── main.py
+├── requirements.txt
+├── static
+│   └── img
+│       └── fastapi_logo.png
+├── templates
+│   ├── _base.html
+│   └── home.html
+├── test_main.py
+├── views
+│   └── home.py
 └── venv
 ----
-
 
 Use Podman to build a local image:
 
 [source%nowrap,console]
 ----
-podman build -t local/exampleforyou:latest .
+podman build -t local/fastapi-quickstart:latest .
 ----
 
-Use `podman images` to list local images and `podman rmi <IMAGE>` to delete them.
+Use `podman images` to list local images and use `podman rmi <IMAGE>` to delete them.
 
 Run the application using Podman, passing in the environment variable at runtime with:
 
 [source%nowrap,console]
 ----
-podman run -d -p 8000:8000 -e ENV_SECRET="MyTopSecretToken" local/exampleforyou:latest
+podman run -d -p 8000:8000 -e ENV_STRING="Hello World" local/fastapi-quickstart:latest
 ----
 
-That's it! Test the application at http://localhost:8000/
+[source%nowrap,console]
+----
+podman ps
+----
+
+That's all there is to it! Test the application at http://localhost:8000/

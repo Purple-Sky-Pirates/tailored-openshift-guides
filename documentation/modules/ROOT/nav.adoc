@@ -31,6 +31,8 @@
 *** xref:04-1-fastapi-coding.adoc#home_page[Add a Home Page]
 *** xref:04-1-fastapi-coding.adoc#static_files[Static Files]
 *** xref:04-1-fastapi-coding.adoc#env_vars[Environment Variables]
+*** xref:04-1-fastapi-coding.adoc#unit_test[Unit Test]
+*** xref:04-1-fastapi-coding.adoc#reqs[Requirements]
 ** xref:04-2-podman.adoc[Working with Podman]
 ** xref:04-3-openshift.adoc[Deploying on OpenShift]
 ** xref:04-4-helm.adoc[Working with Helm]
@@ -40,8 +42,10 @@
 *** xref:04-4-helm.adoc#helm_image_stream[Helm Image Stream]
 *** xref:04-4-helm.adoc#helm_service[Helm Service]
 *** xref:04-4-helm.adoc#helm_route[Helm Route]
-
 ** xref:04-5-argocd.adoc[Working with ArgoCD]
+** xref:04-6-s2i.adoc[Source to Image]
+** xref:04-7-pipelines.adoc[Pipelines]
+
 
 * xref:petclinic-architecture.adoc[Petclinic]
 ** xref:petclinic-container-image.adoc[Petclinic App]

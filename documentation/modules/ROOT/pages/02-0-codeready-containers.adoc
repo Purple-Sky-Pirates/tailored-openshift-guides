@@ -24,10 +24,10 @@ This guide uses a Virtual Machine with the following with Red Hat Enterprise Lin
 [cols="1,1"]
 |===
 |CPU Cores
-|6
+|10
 
 |Memory
-|20480MiB
+|28672MiB
 
 |Storage
 |120
@@ -48,9 +48,9 @@ If required, as the `root` user add a user account for working with CRC, in this
 
 [source%nowrap,console]
 ----
-useradd dev
-passwd dev
-usermod -aG wheel dev
+useradd developer
+passwd developer
+usermod -aG wheel developer
 ----
 
 === Connect to VM
@@ -60,10 +60,16 @@ usermod -aG wheel dev
 ssh dev@192.168.122.200
 ----
 
+[source%nowrap,console]
+----
+sudo subscription-manager register --username=<USERNAME> --password=<PASSWORD>
+sudo subscription-manager attach --auto
+----
+
 [#downloads]
 == Downloads
 
-Install `wget` and `tar`if required: 
+Install `wget` and `tar` if required: 
 
 [source%nowrap,console]
 ----
@@ -122,6 +128,20 @@ Set the memory for CRC to use:
 ----
 crc config set memory 16384
 crc config get memory
+----
+
+Set the number of cpus for CRC to use:
+
+[source%nowrap,console]
+----
+crc config set cpus 8
+----
+
+View defined configuration:
+
+[source%nowrap,console]
+----
+crc config view
 ----
 
 Next run the crc setup, this needs root privileges and may prompt you for the `sudo` password during the process. The setup process downloads a 11.5GB bundle, and may take some time depending on your download speed:
@@ -214,20 +234,13 @@ Backup the original config:
 sudo mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.orig
 ----
 
-Obtain the IP address for both the CRC VM and the physical host:
+Obtain the IP address for CRC:
 
 [source%nowrap,console]
 ----
 crc ip
 
 192.168.130.11
-----
-
-[source%nowrap,console]
-----
-ip a
-
-192.168.122.155
 ----
 
 Now add the HAProxy configuration using your IP Addresses:
@@ -240,69 +253,30 @@ sudo vi /etc/haproxy/haproxy.cfg
 [source%nowrap,text]
 ----
 global
-    log         127.0.0.1 local2
-    chroot      /var/lib/haproxy
-    pidfile     /var/run/haproxy.pid
-    maxconn     4000
-    user        haproxy
-    group       haproxy
-    daemon
-
-    stats socket /var/lib/haproxy/stats
+    log /dev/log local0
 
 defaults
-    mode                    http
-    log                     global
-    option                  httplog
-    option                  dontlognull
-    option http-server-close
-    option                  redispatch
-    retries                 3
-    timeout http-request    30s
-    timeout queue           1m
-    timeout connect         30s
-    timeout client          1m
-    timeout server          1m
-    timeout http-keep-alive 30s
-    timeout check           30s
-    maxconn                 4000
-
-listen stats
-    bind 0.0.0.0:9000
-    mode http
-    balance
-    timeout client 5000
-    timeout connect 4000
-    timeout server 30000
-    stats uri /stats
-    stats refresh 5s
-    stats realm HAProxy\ Statistics
-    stats auth admin:changeme
-    stats admin if TRUE
-
-# Load Banlancers
-
-frontend apps
-    bind 192.168.122.155:80
-    bind 192.168.122.155:443
-    option tcplog
+    balance roundrobin
+    log global
+    maxconn 2000
     mode tcp
-    default_backend apps
+    timeout connect 5s
+    timeout client 500s
+    timeout server 500s
 
-backend apps
-    mode tcp
-    server crcserver 192.168.130.11:80 check
-    server crcserver 192.168.130.11:443 check
+listen apps
+    bind 0.0.0.0:80
+    server crcvm 192.168.130.11:80 check
 
-frontend api
-    bind 192.168.122.155:6443
-    option tcplog
-    mode tcp
-    default_backend api
+listen apps_ssl
+    bind 0.0.0.0:443
+    server crcvm 192.168.130.11:443 check
 
-backend api
+listen api
+    bind 0.0.0.0:6443
     mode tcp
-    server crcserver 192.168.130.11:6443 check
+    server crcvm 192.168.130.11:6443 check
+
 ----
 
 The following needs to be enabled to avoid issues starting up HAProxy:
@@ -326,14 +300,6 @@ And start and enable `haproxy`:
 sudo systemctl enable haproxy
 sudo systemctl start haproxy
 ----
-
-[source%nowrap,console]
-----
-sudo firewall-cmd --permanent --add-port=9000/tcp --zone public
-sudo firewall-cmd --reload
-----
-
-You can view HAProxy stats at http://192.168.122.155:9000/stats with username `admin` password `changeme` as defined in `haproxy.cfg`.
 
 [#client_config]
 === Client configuration

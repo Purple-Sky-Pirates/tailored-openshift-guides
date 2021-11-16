@@ -17,7 +17,7 @@ Create a new project working directory:
 
 [source%nowrap,console]
 ----
-$ mkdir exampleforyou && cd exampleforyou
+$ mkdir fastapi-quickstart && cd fastapi-quickstart
 ----
 
 Create a new virtual environment, explicitly referencing, in this case Python 3.8:
@@ -173,14 +173,12 @@ FastAPI support Jinja2 templates for rendering HTML
 
 To use Jinja2 templates, install the package:
 
-
 [source%nowrap,console]
 ----
 $ pip install jinja2
 ----
 
 Create a `views` and `templates` directory in the project:
-
 
 [source%nowrap,console]
 ----
@@ -227,7 +225,6 @@ $ vi templates/home.html
 ----
 
 Using template `TemplateResponse` add a home view `home.py`:
-
 
 [source%nowrap,console]
 ----
@@ -279,7 +276,6 @@ if __name__ == '__main__':
     uvicorn.run(main_app, host='0.0.0.0', port=8000)
 else:
     configure()
-
 ----
 
 Running the server and visiting http://127.0.0.1:8000 now should return a regular HTML page.
@@ -333,7 +329,6 @@ def configure_routing():
 
 In the Jinga2 HTML template, static files can be referenced, in `templates/home.html` for example, like this:
 
-
 [source%nowrap,html]
 ----
 <img src="static/img/fastapi_logo.png" alt="FastAPI">
@@ -353,7 +348,7 @@ In this example set a local environment variable `ENV_SECRET`:
 
 [source%nowrap,console]
 ----
-$ export ENV_SECRET="MyTopSecretToken"
+$ export ENV_STRING="Hello FastAPI"
 ----
 
 Edit `main.py`:
@@ -377,11 +372,11 @@ And the following function:
 def configure_env_vars():
     env = Env()
     env.read_env()
-    if not env("ENV_SECRET"):
-        print(f"WARNING: environment variable ENV_SECRET not found")
-        raise Exception("environment variable ENV_SECRET not found.")
+    if not env("ENV_STRING"):
+        print(f"WARNING: environment variable ENV_STRING not found")
+        raise Exception("environment variable ENV_STRING not found.")
     else:
-        home.secret = env("ENV_SECRET")
+        home.env_string = env("ENV_STRING")
 ----
 
 This new function needs calling so add it to the function `configure()`:
@@ -393,7 +388,7 @@ def configure():
     configure_env_vars()
 ----
 
-If the environment variable `ENV_SECRET` is set, the function sets the value of `home.secret`, so add the following to `views/home.py`:
+If the environment variable `ENV_STRING` is set, the function sets the value of `home.env_string`, so add the following to `views/home.py`:
 
 [source%nowrap,console]
 ----
@@ -411,7 +406,7 @@ And define the optional secret:
 
 [source%nowrap,python]
 ----
-secret: Optional[str] = None
+env_string: Optional[str] = None
 ----
 
 To test it works and to see how values can be passed to a template, update the view to return the value:
@@ -420,7 +415,7 @@ To test it works and to see how values can be passed to a template, update the v
 ----
 @router.get('/')
 def home(request: Request):
-    return templates.TemplateResponse('home.html', {'request': request, 'display_secret': secret})
+    return templates.TemplateResponse('home.html', {'request': request, 'env_string': env_string})
 ----
 
 Finally, edit the home template to display the secret:
@@ -432,12 +427,12 @@ $ vi templates/home.html
 
 [source%nowrap,html]
 ----
-<p>SECRET: {{ display_secret }}</p>
+<p>Value from environment variable ENV_STRING = {{ env_string }}</p>
 ----
 
 Running the application now should display the secret on the home page. This demonstrates how values can be obtained in a safe way based on the environment and decouple environmental differences. When using Docker, Podman, Kubernetes or OpenShift this approach will pay dividends.
 
-Environs also supports reading a hidden file called `.env` in the root of the project, rather that exporting variables at the user level, they can be defined at a project level. Just remember never to include `.env` in version control!
+Environs also supports reading a hidden file called `.env` in the root of the project, rather that exporting variables at the user level, they can be defined at a project level. Just remember never to include `.env` in version control if there are secrets involved!
 
 
 [source%nowrap,console]
@@ -447,5 +442,78 @@ $ vi .env
 
 [source%nowrap,text]
 ----
-export ENV_SECRET="MyTopSecretToken"
+export ENV_STRING="Hello World"
+----
+
+[#unit_test]
+=== Unit Test
+
+Install `pytest` and `requests`:
+
+[source%nowrap,console]
+----
+pip install pytest requests
+----
+
+Add `test_main.py`:
+
+[source%nowrap,console]
+----
+from fastapi.testclient import TestClient
+
+from main import main_app
+
+client = TestClient(main_app)
+
+
+def test_read_main():
+    response = client.get("/api/motd")
+    assert response.status_code == 200
+    assert response.json() == {"message":"Hello FastAPI!"}
+----
+
+Run tests:
+
+[source%nowrap,console]
+----
+pytest
+----
+
+[source%nowrap,console]
+----
+======================= test session starts =======================
+platform linux -- Python 3.8.12, pytest-6.2.5, py-1.11.0, pluggy-1.0.0
+rootdir: /home/redhat/Documents/pure/github/fastapi-quickstart
+plugins: anyio-3.3.4
+collected 1 item                                                  
+
+test_main.py .                                              [100%]
+
+======================== 1 passed in 0.26s ========================
+
+----
+
+[#reqs]
+=== Requirements
+
+So far in this project the following packages have been installed:app-name: 
+
+[source%nowrap,console]
+----
+fastapi 
+uvicorn
+jinja2
+aiofiles
+environs
+pytest 
+requests
+----
+
+You can add this in that format to a file in the root of you projects directory called `requirements.txt`, doing so will not lock the versions and the latest should be installed.
+
+Alternatively, to freeze the current versions for stability use the following command:
+
+[source%nowrap,console]
+----
+pip freeze > requirements.txt
 ----
