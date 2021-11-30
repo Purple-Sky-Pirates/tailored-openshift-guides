@@ -75,3 +75,4 @@
 *** xref:petclinic-backend.adoc#linking_frontend_to_backend[Exercise: Link Frontend to Backend]
 *** xref:petclinic-backend.adoc#verify_application[Exercise: Verify App]
 
+* xref:migration-manifests.adoc[Migrating Manifests]

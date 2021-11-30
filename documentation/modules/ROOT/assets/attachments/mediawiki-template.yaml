@@ -1,0 +1,310 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  creationTimestamp: null
+  name: mediawiki
+objects:
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps.openshift.io/v1","kind":"DeploymentConfig","metadata":{"annotations":{},"labels":{"app":"mariadb","service":"mariadb"},"name":"mariadb","namespace":"mediawiki"},"spec":{"replicas":1,"selector":{"app":"mariadb","service":"mariadb"},"strategy":{"rollingParams":{"intervalSeconds":1,"maxSurge":"25%","maxUnavailable":"25%","timeoutSeconds":600,"updatePeriodSeconds":1},"type":"Rolling"},"template":{"metadata":{"labels":{"app":"mariadb","service":"mariadb"}},"spec":{"containers":[{"env":[{"name":"MYSQL_ROOT_PASSWORD","value":"changeme"},{"name":"MYSQL_USER","value":"changeme"},{"name":"MYSQL_PASSWORD","value":"changeme"},{"name":"MYSQL_DATABASE","value":"changeme"}],"image":"docker.io/centos/mariadb-102-centos7","name":"mariadb","ports":[{"containerPort":3306,"protocol":"TCP"}],"terminationMessagePath":"/dev/termination-log","volumeMounts":[{"mountPath":"/var/lib/mysql/data","name":"mariadb"}],"workingDir":"/"}],"dnsPolicy":"ClusterFirst","restartPolicy":"Always","terminationGracePeriodSeconds":30,"volumes":[{"name":"mariadb","persistentVolumeClaim":{"claimName":"mariadb"}}]}},"test":false,"triggers":[{"type":"ConfigChange"}]}}
+    creationTimestamp: null
+    generation: 1
+    labels:
+      app: mariadb
+      service: mariadb
+    name: mariadb
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      app: mariadb
+      service: mariadb
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: mariadb
+          service: mariadb
+      spec:
+        containers:
+        - env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: changeme
+          - name: MYSQL_USER
+            value: changeme
+          - name: MYSQL_PASSWORD
+            value: changeme
+          - name: MYSQL_DATABASE
+            value: changeme
+          image: docker.io/centos/mariadb-102-centos7
+          imagePullPolicy: Always
+          name: mariadb
+          ports:
+          - containerPort: 3306
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/lib/mysql/data
+            name: mariadb
+          workingDir: /
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: mariadb
+          persistentVolumeClaim:
+            claimName: mariadb
+    test: false
+    triggers:
+    - type: ConfigChange
+  status:
+    availableReplicas: 0
+    latestVersion: 0
+    observedGeneration: 0
+    replicas: 0
+    unavailableReplicas: 0
+    updatedReplicas: 0
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps.openshift.io/v1","kind":"DeploymentConfig","metadata":{"annotations":{},"labels":{"app":"mediawiki","service":"mediawiki"},"name":"mediawiki","namespace":"mediawiki"},"spec":{"replicas":1,"selector":{"app":"mediawiki","service":"mediawiki"},"strategy":{"type":"Recreate"},"template":{"metadata":{"labels":{"app":"mediawiki","service":"mediawiki"}},"spec":{"containers":[{"env":[{"name":"MEDIAWIKI_DB_SCHEMA","value":"mediawiki"},{"name":"MEDIAWIKI_SITE_NAME","value":"Mediawiki"},{"name":"MEDIAWIKI_SITE_LANG","value":"en"},{"name":"MEDIAWIKI_ADMIN_USER","value":"admin"},{"name":"MEDIAWIKI_ADMIN_PASS","value":"changeme"},{"name":"MEDIAWIKI_SITE_SERVER","value":"mediawiki-mediawiki.apps.4f5c.example.opentlc.com"},{"name":"DB_TYPE","value":"mysql"},{"name":"DB_HOST","value":"mariadb"},{"name":"DB_PORT","value":"3306"},{"name":"DB_USER","value":"changeme"},{"name":"DB_PASSWORD","value":"changeme"},{"name":"DB_NAME","value":"changeme"}],"image":"docker.io/ansibleplaybookbundle/mediawiki:latest","name":"mediawiki","ports":[{"containerPort":8080,"protocol":"TCP"}],"volumeMounts":[{"mountPath":"/persistent","name":"mediawiki"}]}],"volumes":[{"name":"mediawiki","persistentVolumeClaim":{"claimName":"mediawiki"}}]}}}}
+    creationTimestamp: null
+    generation: 1
+    labels:
+      app: mediawiki
+      service: mediawiki
+    name: mediawiki
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      app: mediawiki
+      service: mediawiki
+    strategy:
+      activeDeadlineSeconds: 21600
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: mediawiki
+          service: mediawiki
+      spec:
+        containers:
+        - env:
+          - name: MEDIAWIKI_DB_SCHEMA
+            value: mediawiki
+          - name: MEDIAWIKI_SITE_NAME
+            value: Mediawiki
+          - name: MEDIAWIKI_SITE_LANG
+            value: en
+          - name: MEDIAWIKI_ADMIN_USER
+            value: admin
+          - name: MEDIAWIKI_ADMIN_PASS
+            value: changeme
+          - name: MEDIAWIKI_SITE_SERVER
+            value: mediawiki-mediawiki.apps.4f5c.example.opentlc.com
+          - name: DB_TYPE
+            value: mysql
+          - name: DB_HOST
+            value: mariadb
+          - name: DB_PORT
+            value: "3306"
+          - name: DB_USER
+            value: changeme
+          - name: DB_PASSWORD
+            value: changeme
+          - name: DB_NAME
+            value: changeme
+          image: docker.io/ansibleplaybookbundle/mediawiki:latest
+          imagePullPolicy: Always
+          name: mediawiki
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /persistent
+            name: mediawiki
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: mediawiki
+          persistentVolumeClaim:
+            claimName: mediawiki
+    test: false
+    triggers:
+    - type: ConfigChange
+  status:
+    availableReplicas: 0
+    latestVersion: 0
+    observedGeneration: 0
+    replicas: 0
+    unavailableReplicas: 0
+    updatedReplicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"mariadb","service":"mariadb"},"name":"mariadb","namespace":"mediawiki"},"spec":{"ports":[{"port":3306,"protocol":"TCP","targetPort":3306}],"selector":{"app":"mariadb","service":"mariadb"}}}
+    creationTimestamp: null
+    labels:
+      app: mariadb
+      service: mariadb
+    name: mariadb
+  spec:
+    ports:
+    - port: 3306
+      protocol: TCP
+      targetPort: 3306
+    selector:
+      app: mariadb
+      service: mariadb
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"mediawiki","service":"mediawiki"},"name":"mediawiki","namespace":"mediawiki"},"spec":{"ports":[{"name":"web","port":8080,"targetPort":8080}],"selector":{"app":"mediawiki","service":"mediawiki"}}}
+    creationTimestamp: null
+    labels:
+      app: mediawiki
+      service: mediawiki
+    name: mediawiki
+  spec:
+    ports:
+    - name: web
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: mediawiki
+      service: mediawiki
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"route.openshift.io/v1","kind":"Route","metadata":{"annotations":{},"labels":{"app":"mediawiki","service":"mediawiki"},"name":"mediawiki","namespace":"mediawiki"},"spec":{"port":{"targetPort":"web"},"to":{"kind":"Service","name":"mediawiki"}}}
+      openshift.io/host.generated: "true"
+    creationTimestamp: null
+    labels:
+      app: mediawiki
+      service: mediawiki
+    name: mediawiki
+  spec:
+    host: mediawiki-mediawiki.apps.4f5c.example.opentlc.com
+    port:
+      targetPort: web
+    to:
+      kind: Service
+      name: mediawiki
+      weight: 100
+    wildcardPolicy: None
+  status:
+    ingress:
+    - conditions:
+      - lastTransitionTime: "2021-11-30T10:15:42Z"
+        status: "True"
+        type: Admitted
+      host: mediawiki-mediawiki.apps.4f5c.example.opentlc.com
+      routerName: router
+      wildcardPolicy: None
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"name":"mariadb","namespace":"mediawiki"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"1Gi"}}}}
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/glusterfs
+    creationTimestamp: "2021-11-30T10:15:27Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: mariadb
+    namespace: mediawiki
+    resourceVersion: "12530"
+    selfLink: /api/v1/namespaces/mediawiki/persistentvolumeclaims/mariadb
+    uid: 70cf3363-51c6-11ec-92cc-06bb501be1ac
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: glusterfs-storage
+    volumeName: pvc-70cf3363-51c6-11ec-92cc-06bb501be1ac
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 1Gi
+    phase: Bound
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"name":"mediawiki","namespace":"mediawiki"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"1Gi"}}}}
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/glusterfs
+    creationTimestamp: "2021-11-30T10:16:00Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: mediawiki
+    namespace: mediawiki
+    resourceVersion: "12759"
+    selfLink: /api/v1/namespaces/mediawiki/persistentvolumeclaims/mediawiki
+    uid: 846f9b1d-51c6-11ec-92cc-06bb501be1ac
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: glusterfs-storage
+    volumeName: pvc-846f9b1d-51c6-11ec-92cc-06bb501be1ac
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 1Gi
+    phase: Bound

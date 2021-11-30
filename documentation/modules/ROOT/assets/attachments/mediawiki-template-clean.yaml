@@ -1,0 +1,223 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: mediawiki
+objects:
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: mariadb
+      service: mariadb
+    name: mariadb
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      app: mariadb
+      service: mariadb
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: mariadb
+          service: mariadb
+      spec:
+        containers:
+        - env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: changeme
+          - name: MYSQL_USER
+            value: changeme
+          - name: MYSQL_PASSWORD
+            value: changeme
+          - name: MYSQL_DATABASE
+            value: changeme
+          image: docker.io/centos/mariadb-102-centos7
+          imagePullPolicy: Always
+          name: mariadb
+          ports:
+          - containerPort: 3306
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/lib/mysql/data
+            name: mariadb
+          workingDir: /
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: mariadb
+          persistentVolumeClaim:
+            claimName: mariadb
+    test: false
+    triggers:
+    - type: ConfigChange
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    generation: 1
+    labels:
+      app: mediawiki
+      service: mediawiki
+    name: mediawiki
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      app: mediawiki
+      service: mediawiki
+    strategy:
+      activeDeadlineSeconds: 21600
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: mediawiki
+          service: mediawiki
+      spec:
+        containers:
+        - env:
+          - name: MEDIAWIKI_DB_SCHEMA
+            value: mediawiki
+          - name: MEDIAWIKI_SITE_NAME
+            value: Mediawiki
+          - name: MEDIAWIKI_SITE_LANG
+            value: en
+          - name: MEDIAWIKI_ADMIN_USER
+            value: admin
+          - name: MEDIAWIKI_ADMIN_PASS
+            value: changeme
+          - name: MEDIAWIKI_SITE_SERVER
+            value: mediawiki-mediawiki.apps.4f5c.example.opentlc.com
+          - name: DB_TYPE
+            value: mysql
+          - name: DB_HOST
+            value: mariadb
+          - name: DB_PORT
+            value: "3306"
+          - name: DB_USER
+            value: changeme
+          - name: DB_PASSWORD
+            value: changeme
+          - name: DB_NAME
+            value: changeme
+          image: docker.io/ansibleplaybookbundle/mediawiki:latest
+          imagePullPolicy: Always
+          name: mediawiki
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /persistent
+            name: mediawiki
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: mediawiki
+          persistentVolumeClaim:
+            claimName: mediawiki
+    test: false
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: mariadb
+      service: mariadb
+    name: mariadb
+  spec:
+    ports:
+    - port: 3306
+      protocol: TCP
+      targetPort: 3306
+    selector:
+      app: mariadb
+      service: mariadb
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: mediawiki
+      service: mediawiki
+    name: mediawiki
+  spec:
+    ports:
+    - name: web
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: mediawiki
+      service: mediawiki
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    labels:
+      app: mediawiki
+      service: mediawiki
+    name: mediawiki
+  spec:
+    port:
+      targetPort: web
+    to:
+      kind: Service
+      name: mediawiki
+      weight: 100
+    wildcardPolicy: None
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: mariadb
+    namespace: mediawiki
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: mediawiki
+    namespace: mediawiki
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi

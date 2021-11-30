@@ -1,0 +1,105 @@
+apiVersion: v1
+items:
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"apps.openshift.io/v1","kind":"DeploymentConfig","metadata":{"annotations":{},"labels":{"app":"file-uploader"},"name":"file-uploader","namespace":"file-uploader"},"spec":{"replicas":3,"selector":{"app":"file-uploader","deploymentconfig":"file-uploader"},"strategy":{"activeDeadlineSeconds":21600,"resources":{},"rollingParams":{"intervalSeconds":1,"maxSurge":"25%","maxUnavailable":"25%","timeoutSeconds":600,"updatePeriodSeconds":1},"type":"Rolling"},"template":{"metadata":{"labels":{"app":"file-uploader","deploymentconfig":"file-uploader"}},"spec":{"containers":[{"image":"","imagePullPolicy":"Always","name":"file-uploader","ports":[{"containerPort":8443,"protocol":"TCP"},{"containerPort":8080,"protocol":"TCP"}],"volumeMounts":[{"mountPath":"/opt/app-root/src/uploaded","name":"file-uploader-vol"}]}],"dnsPolicy":"ClusterFirst","restartPolicy":"Always","schedulerName":"default-scheduler","securityContext":{},"terminationGracePeriodSeconds":30,"volumes":[{"name":"file-uploader-vol","persistentVolumeClaim":{"claimName":"file-uploader-vol-claim"}}]}},"triggers":[{"type":"ConfigChange"},{"imageChangeParams":{"automatic":true,"containerNames":["file-uploader"],"from":{"kind":"ImageStreamTag","name":"file-uploader:latest","namespace":"file-uploader"}},"type":"ImageChange"}]}}
+    creationTimestamp: "2021-11-30T10:14:38Z"
+    generation: 2
+    labels:
+      app: file-uploader
+    name: file-uploader
+    namespace: file-uploader
+    resourceVersion: "12664"
+    selfLink: /apis/apps.openshift.io/v1/namespaces/file-uploader/deploymentconfigs/file-uploader
+    uid: 537a20fd-51c6-11ec-92cc-06bb501be1ac
+  spec:
+    replicas: 3
+    revisionHistoryLimit: 10
+    selector:
+      app: file-uploader
+      deploymentconfig: file-uploader
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: file-uploader
+          deploymentconfig: file-uploader
+      spec:
+        containers:
+        - image: docker-registry.default.svc:5000/file-uploader/file-uploader@sha256:ab96e182993015cea7fe1d818f588fd32bfecbaef9892e738bb30b3635797ae0
+          imagePullPolicy: Always
+          name: file-uploader
+          ports:
+          - containerPort: 8443
+            protocol: TCP
+          - containerPort: 8080
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /opt/app-root/src/uploaded
+            name: file-uploader-vol
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: file-uploader-vol
+          persistentVolumeClaim:
+            claimName: file-uploader-vol-claim
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - file-uploader
+        from:
+          kind: ImageStreamTag
+          name: file-uploader:latest
+          namespace: file-uploader
+        lastTriggeredImage: docker-registry.default.svc:5000/file-uploader/file-uploader@sha256:ab96e182993015cea7fe1d818f588fd32bfecbaef9892e738bb30b3635797ae0
+      type: ImageChange
+  status:
+    availableReplicas: 3
+    conditions:
+    - lastTransitionTime: "2021-11-30T10:16:01Z"
+      lastUpdateTime: "2021-11-30T10:16:01Z"
+      message: Deployment config has minimum availability.
+      status: "True"
+      type: Available
+    - lastTransitionTime: "2021-11-30T10:16:01Z"
+      lastUpdateTime: "2021-11-30T10:16:01Z"
+      message: replication controller "file-uploader-1" successfully rolled out
+      reason: NewReplicationControllerAvailable
+      status: "True"
+      type: Progressing
+    details:
+      causes:
+      - type: ConfigChange
+      message: config change
+    latestVersion: 1
+    observedGeneration: 2
+    readyReplicas: 3
+    replicas: 3
+    unavailableReplicas: 0
+    updatedReplicas: 3
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""

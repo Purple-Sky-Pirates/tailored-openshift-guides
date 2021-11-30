@@ -1,0 +1,22 @@
+
+Scale the app down to zero
+
+tar --same-owner -xvf file.tar
+
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dataaccess
+spec:
+  containers:
+    - name: alpine
+      image: alpine:latest
+      command: ["sleep", "infinity"]
+      volumeMounts:
+        - name: mypvc
+          mountPath: /inbound
+  volumes:
+    - name: mypvc
+      persistentVolumeClaim:
+        claimName: mypvc

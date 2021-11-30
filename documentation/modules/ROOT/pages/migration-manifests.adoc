@@ -1,0 +1,250 @@
+= Migrating Manifests
+:navtitle: Migrating Manifests
+
+Once we have our images available somewhere, in order to spin up the application in a fresh Openshift cluster we will need to populate our project with the appropriate kubernetes manifests.  This document will explain an opinionated approach
+
+. Extracting manifests from the Openshift 3 cluster
+. Generating an Openshift template from those Manifests
+. Converting that template into a Helm Chart
+
+== Exporting Manifests
+
+In the older version of the oc binary for Openshift 3.11 there is an option to export your objects.  The export option removes a number attributes that are specific to the current cluster and uneccessary to be transferred into another.
+
+=== Using the old oc binary
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc version
+----
+
+[.console-output]
+[source,bash]
+----
+oc v3.11.161
+kubernetes v1.11.0+d4cacc0
+features: Basic-Auth GSSAPI Kerberos SPNEGO
+
+Server https://master1.4f5c.internal:443
+openshift v3.11.161
+kubernetes v1.11.0+d4cacc0
+----
+
+== Exporting a simple application - images off cluster
+
+A very simple application.  This application has no external config.  It consists of a database and web pod.
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get dc,svc,routes -l 'app in (mariadb,mediawiki)'
+----
+
+[.console-output]
+[source,bash]
+----
+NAME                                           REVISION   DESIRED   CURRENT   TRIGGERED BY
+deploymentconfig.apps.openshift.io/mariadb     1          1         1         config
+deploymentconfig.apps.openshift.io/mediawiki   1          1         1         config
+
+NAME                TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+service/mariadb     ClusterIP   172.30.150.32   <none>        3306/TCP   18m
+service/mediawiki   ClusterIP   172.30.47.137   <none>        8080/TCP   17m
+
+NAME                                 HOST/PORT                                           PATH      SERVICES    PORT      TERMINATION   WILDCARD
+route.route.openshift.io/mediawiki   mediawiki-mediawiki.apps.4f5c.example.opentlc.com             mediawiki   web                     None
+----
+
+Note that the persistent volumes are missing here.
+
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc export dc,svc,routes -l 'app in (mariadb,mediawiki)' --as-template=mediawiki > mediawiki-template.yaml
+----
+
+[.console-output]
+[source,bash]
+----
+Command "export" is deprecated, use the oc get --export
+----
+
+We should also have a file `mediawiki-template.yaml` in the directory.  Examine this.  Let's add the PVC's to the end of this file...
+
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc get pvc --export -o yaml
+----
+
+[.console-output]
+[source,bash]
+----
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"name":"mariadb","namespace":"mediawiki"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"1Gi"}}}}
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/glusterfs
+    creationTimestamp: "2021-11-30T10:15:27Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: mariadb
+    namespace: mediawiki
+    resourceVersion: "12530"
+    selfLink: /api/v1/namespaces/mediawiki/persistentvolumeclaims/mariadb
+    uid: 70cf3363-51c6-11ec-92cc-06bb501be1ac
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: glusterfs-storage
+    volumeName: pvc-70cf3363-51c6-11ec-92cc-06bb501be1ac
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 1Gi
+    phase: Bound
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"annotations":{},"name":"mediawiki","namespace":"mediawiki"},"spec":{"accessModes":["ReadWriteOnce"],"resources":{"requests":{"storage":"1Gi"}}}}
+      pv.kubernetes.io/bind-completed: "yes"
+      pv.kubernetes.io/bound-by-controller: "yes"
+      volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/glusterfs
+    creationTimestamp: "2021-11-30T10:16:00Z"
+    finalizers:
+    - kubernetes.io/pvc-protection
+    name: mediawiki
+    namespace: mediawiki
+    resourceVersion: "12759"
+    selfLink: /api/v1/namespaces/mediawiki/persistentvolumeclaims/mediawiki
+    uid: 846f9b1d-51c6-11ec-92cc-06bb501be1ac
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+    storageClassName: glusterfs-storage
+    volumeName: pvc-846f9b1d-51c6-11ec-92cc-06bb501be1ac
+  status:
+    accessModes:
+    - ReadWriteOnce
+    capacity:
+      storage: 1Gi
+    phase: Bound
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""
+----
+
+=== Fixing the Template
+
+You'll notice a number of things that have changed between the `As Exported` and `Cleaned` versions below.  You'll have to perform a similar exercise with your exported definitions.  It may be worth dowloading the items and performing a diff to get a better visual view of the differences.  The difference include:
+
+- Removal of unneccesary annotations
+- Adding in the PVCs and changing the storageClass
+- Removal of various unneccesary metadata
+
+[tabs]
+====
+As Exported::
++
+--
+link:{attachmentsdir}/mediawiki-template.yaml[Download the mediawiki-template.yaml].
+
+[source,yaml,subs="+attributes,macros+"]
+----
+include::example$mediawiki-template.yaml[]
+----
+--
+Cleaned::
++
+--
+link:{attachmentsdir}/mediawiki-template-clean.yaml[Download the mediawiki-template-clean.yaml].
+
+[source,yaml,subs="+attributes,macros+"]
+----
+include::example$mediawiki-template-clean.yaml[]
+----
+--
+====
+
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+$ oc create -f mediawiki-template-clean.yaml
+----
+
+[.console-output]
+[source,bash]
+----
+template.template.openshift.io/mediawiki created
+----
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+$ oc get templates
+----
+
+[.console-output]
+[source,bash]
+----
+NAME        DESCRIPTION   PARAMETERS    OBJECTS
+mediawiki                 0 (all set)   7
+----
+
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+oc new-app --template=mediawiki
+----
+
+[.console-output]
+[source,bash]
+----
+--> Deploying template "mediawiki/mediawiki" to project mediawiki
+
+--> Creating resources ...
+    deploymentconfig.apps.openshift.io "mariadb" created
+    deploymentconfig.apps.openshift.io "mediawiki" created
+    service "mariadb" created
+    service "mediawiki" created
+    route.route.openshift.io "mediawiki" created
+    persistentvolumeclaim "mariadb" created
+    persistentvolumeclaim "mediawiki" created
+--> Success
+    Access your application via route 'mediawiki-mediawiki.apps.cluster-rgjbp.rgjbp.sandbox1532.opentlc.com' 
+    Run 'oc status' to view your app.
+----
+
+
+== Exporting a simple application - with an imagestream
+
+Follow the guide on exporting and importing an Imagestream...
+
+It's the same as above, however, with a deploymentConfig you'll need to ensure the image is blank....
+
+
+[source,yaml,linenums,highlight=1]
+----
+include::example$fileuploader-dc-clean.yaml[]
+----
