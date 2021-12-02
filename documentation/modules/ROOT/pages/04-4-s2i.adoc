@@ -1,0 +1,674 @@
+= Source to Image
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction to S2I
+
+Another approach to developing for OpenShift is Source-to-Image. `s2i` is a tool provided by Red Hat that enables additional information alongside source code in a project, enabling the build of container images to run applications on-demand.
+
+NOTE: The Source-to-Image s2i build command has a dependency on a local Docker service. This guide uses RHEL 8 and Podman (no Docker) explicitly. Therefore, there is a subtle difference using the --as-dockerfile option, adding an extra `podman` build step.
+
+S2I is nothing more than an opinionated approach to building container images.
+
+In the case of a Python example, start with a clean base image, s2i adds application-specific dependencies. For example, you might take a minimal RHEL8 base image, then create a new "S2I" image, add Python, PIP and use PIP to install FastAPI.
+
+This new Python/FastAPI builder image can be consumed, only needing to add code and a run script, reducing the time to deploy an application (because Python & required packages are already staged in the image). The less extra stuff to do in the final application image builds, the faster to deploy.
+
+[source%nowrap,console]
+----
+── Base Image
+   └── Builder Image
+       └── Application Image
+----
+
+You can think of the process as a basic build pipeline. Most enterprises already have more sophisticated build pipelines in place. A term often used is "Image Bakery". Final application images are ready for consumption in some image registry.
+
+However, Source-to-Image comes out of the box with OpenShift and provides a convenient method for developers to override "assemble" and "run" scripts. These scripts, as mentioned earlier, can be included in a source code repository along with source code. In addition, Source-to-Image empowers the developer to include additional packages and custom commands while consuming standard base or custom build images.
+
+To grasp what is happening, let us go down into it.
+
+TIP: Skip to the OpenShift S2I section if you don't really care about the low-level S2I details. All you might want to know is that a `run` script in the code project is all that's needed to crack on.
+
+[#binary]
+== Get s2i binary
+
+[source%nowrap,console]
+----
+$ wget https://github.com/openshift/source-to-image/releases/download/v1.3.1/source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz
+----
+
+[source%nowrap,console]
+----
+$ tar -xvf source-to-image-v1.3.1-a5a77147-linux-amd64.tar.gz .
+----
+
+[source%nowrap,console]
+----
+$ mv s2i ~/bin
+----
+
+[source%nowrap,console]
+----
+$ s2i version
+
+s2i v1.3.1
+----
+
+[#ubi]
+== Explore UBI
+
+Assuming you have access to a registry containing UBI images (use `podman login`), you can search the registry, for example:
+
+[source%nowrap,console]
+----
+$ podman search registry.redhat.io/ubi8
+----
+
+Pull the `python-39` base image as needed.
+
+[source%nowrap,console]
+----
+$ podman pull registry.redhat.io/ubi8/python-39
+----
+
+TIP: You'll need to log into `registry.redhat.io` with `podman login registry.redhat.io` using valid Red Hat credentials.
+
+TIP: You can sign up for free and obtain valid credentials here https://developers.redhat.com/register
+
+[source%nowrap,console]
+----
+$ podman images
+REPOSITORY                          TAG      IMAGE ID       CREATED       SIZE
+registry.redhat.io/ubi8/python-39   latest   88189ceb8a67   5 weeks ago   825 MB
+----
+
+Our example is concerned with the `python-39` image.
+
+You can validate that this is indeed an S2I primed image:
+
+[source%nowrap,console]
+----
+$ podman inspect --format='{{ index .Config.Labels "io.openshift.s2i.scripts-url"}}' registry.redhat.io/ubi8/python-39
+----
+
+You should see the following output, which confirms the image includes `s2i`:
+
+[source%nowrap,console]
+----
+image:///usr/libexec/s2i
+----
+
+Explore the container:
+
+[source%nowrap,console]
+----
+$ podman run --name test -it registry.redhat.io/ubi8/python-39 bash
+----
+
+You'll find the following directories and files are present:
+
+[source%nowrap,text]
+----
+$ ls -al /usr/libexec/s2i
+/usr/libexec/s2i/assemble
+/usr/libexec/s2i/run
+/usr/libexec/s2i/usage
+----
+
+Python and PIP are already installed (because this is the `python-39` base image):
+
+[source%nowrap,console]
+----
+(app-root) python -V
+Python 3.9.6
+(app-root) pip -V
+pip 21.3.1 from /home/redhat/.local/lib/python3.9/site-packages/pip (python 3.9)
+----
+
+[#fastapi]
+=== FastAPI example
+
+==== S2I base image
+
+Starting with a blank canvas, create a new working directory:
+
+[source%nowrap,console]
+----
+$ mkdir ~/projects/fastapi-quickstart-s2i && cd ~/projects/fastapi-quickstart-s2i
+----
+
+Use s2i create <image_name> <directory> to start a new project:
+
+[source%nowrap,console]
+----
+$ s2i create s2i-fastapi s2i-fastapi
+$ cd s2i-fastapi
+----
+
+The command create the following skeleton structure:
+
+[source%nowrap,text]
+----
+.
+├── Dockerfile
+├── Makefile
+├── README.md
+├── s2i
+│   └── bin
+│       ├── assemble
+│       ├── run
+│       ├── save-artifacts
+│       └── usage
+└── test
+    ├── run
+    └── test-app
+        └── index.html
+----
+
+You can remove the test directory.
+
+[source%nowrap,console]
+----
+$ rm -rf test/
+----
+
+The `Dockerfile` generated is a handy reference, here is a working example for this guide:
+
+[source%nowrap,console]
+----
+$ vi Dockerfile
+----
+
+[source%nowrap,dockerfile]
+----
+FROM ubi8/python-39
+
+LABEL maintainer="Richard Walker"
+LABEL io.k8s.description="Platform for building FastAPI applications" \
+      io.k8s.display-name="builder 0.0.1" \
+      io.openshift.expose-services="8000:http" \
+      io.openshift.tags="builder,python,python39"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=UTF-8
+
+RUN pip install --upgrade pip
+RUN pip install fastapi
+
+COPY ./s2i/bin/ /usr/libexec/s2i
+
+USER root
+
+RUN chown -R 1001:1001 /opt/app-root/src
+
+USER 1001
+
+EXPOSE 8000
+
+CMD ["/usr/libexec/s2i/usage"]
+
+----
+
+Add additional application build tasks in `s2i/bin/assemble`, for purposes of demonstration, here the `fastapi` package is duplicated (that package is already being installed in the `Dockerfile`, `RUN pip install fastapi`), however, the addition `unicorn` package is appended:
+
+[source%nowrap,console]
+----
+$ vi s2i/bin/assemble
+----
+
+[source%nowrap,bash]
+----
+#!/bin/bash -e
+
+# If the 's2i-fastapi' assemble script is executed with the '-h' flag, print the usage.
+if [[ "$1" == "-h" ]]; then
+	exec /usr/libexec/s2i/usage
+fi
+
+# Copy source code and fix permissions
+echo "---> Installing application source..."
+cp -Rf /tmp/src/. /opt/app-root/src
+echo "---> Fixing persmissions..."
+chmod -R 775 ./
+
+# Install requirements
+echo "---> Building application from source..."
+
+pip install fastapi uvicorn
+----
+
+This will result in the `fastapi` dependency being already satisfied (See the `Dockerfile`), only installing `uvicorn` from the `assemble` script, making the build faster. Next, add the following to `s2i/bin/run`, so `s2i` knows how to run the application:
+
+[source%nowrap,console]
+----
+$ vi s2i/bin/run
+----
+
+[source%nowrap,bash]
+----
+#!/bin/bash -e
+#
+# S2I run script for the 's2i-fastapi' image.
+# The run script executes the server that runs your application.
+#
+# For more information see the documentation:
+#	https://github.com/openshift/source-to-image/blob/master/docs/builder_image.md
+#
+
+python main.py
+----
+
+Build the image:
+
+[source%nowrap,console]
+----
+$ podman build -t local/fastapi-s2i-img:1.0 .
+----
+
+This is now an custom S2I base image, ready to build a Python FastAPI application from source code, for example:
+
+[source%nowrap,console]
+----
+$ podman images
+REPOSITORY
+localhost/local/fastapi-s2i-img
+----
+
+[#build_s2i]
+=== Build application from S2I
+
+Create a new working directory:
+
+[source%nowrap,console]
+----
+$ mkdir ~/projects/fastapi-quickstart-s2i-build && cd ~/projects/fastapi-quickstart-s2i-build
+----
+
+The following command will "stage" the S2I application image build, you can specify either a git repository:
+
+[source%nowrap,console]
+----
+$ s2i build https://github.com/walkersblog/fastapi-quickstart-project fastapi-s2i-img --as-dockerfile Dockerfile
+----
+
+Or even just a local path to source code on your system:
+
+[source%nowrap,console]
+----
+$ s2i build ~/projects/fastapi-quickstart-project fastapi-s2i-img --as-dockerfile Dockerfile
+----
+
+The previous command is using our `fastapi-s2i-img`, `s2i` knows how craft a new `Dockerfile` and copy any custom scripts and stage the source code.
+
+You can explore the contents of the generated `Dockerfile` and files staged files in `uploads`.
+
+To build a new application image using your custom `s2i` image:
+
+[source%nowrap,console]
+----
+$ buildah bud -t local/fastapi-quickstart-s2i-img:1.0 .
+----
+
+or
+
+[source%nowrap,console]
+----
+$ podman build -t local/fastapi-quickstart-s2i-img:1.0 .
+----
+
+NOTE: For clarity, `fastapi-s2i-img` is the custom S2I builder base image, `fastapi-quickstart-s2i-img` is the final resulting application image to run the application.
+
+And run the container:
+
+[source%nowrap,console]
+----
+$ podman run --name fastapi-app -u 1001 -d -p 8000:8000 -e ENV_STRING="hello-s2i" local/fastapi-quickstart-s2i-img:1.0
+----
+
+IMPORTANT: The container will fail to launch due to missing packages! This is deliberate.
+
+[source%nowrap,console]
+----
+$ podman ps -a
+$ podman logs b9fc63c55e37
+----
+
+[source%nowrap,console]
+----
+Traceback (most recent call last):
+  File "main.py", line 4, in <module>
+    from views import home # New
+  File "/opt/app-root/src/views/home.py", line 10, in <module>
+    templates = Jinja2Templates('templates')
+  File "/opt/app-root/lib/python3.6/site-packages/starlette/templating.py", line 58, in __init__
+    assert jinja2 is not None, "jinja2 must be installed to use Jinja2Templates"
+AssertionError: jinja2 must be installed to use Jinja2Templates
+----
+
+So far, the `fastapi` package was included in the original base image build, and therefore satisfied. Secondly, `fastapi` and `uvicorn` where included in the s2i `assemble` script, so uvicorn was installed. But we still need `jinja2`, `aiofiles`, `environs`, `pytest` and `requests` for the application to run.
+
+You could go back a whole stage and include them in the local `s2i/bin/assemble` and rebuild the S2I base image, or you have the option to include `.s2i/bin/assemble` in the code project, that would override and take precedence.
+
+Hopefully it's becoming a little clearer, that all S2i does is enable images to be preloaded with build and execution steps for certain types of applications. The degree of this "preloading" will vary, the less done, the more generic an image, thus requiring longer build/deploy times, however, the greater "pre-loading/configuration" the more specific the S2I use cases will become, but faster build/deploy times are to be had.
+
+Let's add an `assemble` script to out coding project next.
+
+Remove the failed container, for example:
+
+[source%nowrap,console]
+----
+$ podman ps -a
+$ podman rm b9fc63c55e37
+----
+
+[#git]
+=== Git
+
+Ensure you are in the `fastapi-quickstart-project` directory:
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-project
+----
+
+Go ahead and add the following to the code project:
+
+[source%nowrap,console]
+----
+$ mkdir -p .s2i/bin/
+$ vi .s2i/bin/assemble
+----
+
+The following now copies the source code to the correct location within the container and includes all the need packages:
+
+[source%nowrap,console]
+----
+#!/bin/bash -e
+
+# If the 's2i-fastapi' assemble script is executed with the '-h' flag, print the usage.
+if [[ "$1" == "-h" ]]; then
+	exec /usr/libexec/s2i/usage
+fi
+
+echo "---> Installing application source..."
+cp -Rf /tmp/src/. /opt/app-root/src
+echo "---> Fixing persmissions..."
+chmod -R 775 ./
+
+# Install requirements
+echo "---> Building application from source..."
+
+pip install fastapi uvicorn jinja2 aiofiles environs pytest requests
+----
+
+[source%nowrap,console]
+----
+$ git add .s2i
+$ git commit -m "added .s2i"
+$ git push
+----
+
+Now repeat the S2I build:
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-s2i-build
+$ rm -rf Dockerfile downloads upload
+----
+
+The following includes the git branch:
+
+[source%nowrap,console]
+----
+$ s2i build https://github.com/walkersblog/fastapi-quickstart-project fastapi-s2i-img --as-dockerfile Dockerfile
+----
+
+Build the application image, you'll notice any package `Requirement already satisfied` skips quite quickly, missing packages will be collected and installed.
+
+[source%nowrap,console]
+----
+$ buildah bud -t local/fastapi-quickstart-s2i-img:1.1 .
+----
+
+[source%nowrap,console]
+----
+$ podman run --name fastapi-app -u 1001 -d -p 8000:8000 -e ENV_STRING="hello-s2i" local/fastapi-quickstart-s2i-img:1.1
+----
+
+And all should be working, with a local running container, `curl http://localhost:8000/api/motd`.
+
+[#ocp_s2i]
+=== OpenShift S2I
+
+This OpenShift S2I quick-start is towards the end of this S2I section, because now you may have a fighting chance of understanding what is happening when invoking a generic s2i build in OpenShift.
+
+Most out-of-the-box Python S2I images have no understanding of how to run the FastAPI application in this guide, (which uses `python main.py`). But now it should be obvious, all that is required is the inclusion of `.s2i/bin/assemble` and `.s2i/bin/run` in the source code project.
+
+TIP: Standard Python S2I images include and execute a `pip install -r requirements.txt` if `requirements.txt` is included in your project, so usually no need for the `assemble` script.
+
+With these fundamentals of using S2I images, some confidence can be had taking a Python universal base image, and including a tweaked `assemble` and `run` script along side your code for deploying your application.
+
+The demo project https://github.com/walkersblog/fastapi-quickstart-project.git has just the `run` script in place on the main branch, and should "just work" with the following commands:
+
+Ensure you are in the `fastapi-quickstart-project` directory:
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-project
+----
+
+Go ahead and add the following to the code project:
+
+[source%nowrap,console]
+----
+$ mkdir -p .s2i/bin/
+$ vi .s2i/bin/run
+----
+
+The following now copies the source code to the correct location within the container and includes all the need packages:
+
+[source%nowrap,console]
+----
+#!/bin/bash -e
+#
+# S2I run script for the 's2i-fastapi' image.
+# The run script executes the server that runs your application.
+#
+# For more information see the documentation:
+#   https://github.com/openshift/source-to-image/blob/master/docs/builder_image.md
+#
+
+python main.py
+----
+
+Remove the `assemble` script, to prove the standard python S2I image will perform `pip install -r requirements.txt`:
+
+[source%nowrap,console]
+----
+$ rm .s2i/bin/assemble
+----
+
+And commit the changes:
+
+[source%nowrap,console]
+----
+$ git add .s2i/bin/run
+$ git commit -m "added .s2i"
+$ git push
+----
+
+Ensure your in right project as a user:
+
+[source%nowrap,console]
+----
+$ oc project ocp-fastapi-quickstart-project
+----
+
+Deploy source code using a Python UBI image (notice an s2i build is invoked using the tilde):
+
+[source%nowrap,console]
+----
+$ oc new-app registry.access.redhat.com/ubi8/python-38~https://github.com/walkersblog/fastapi-quickstart-project.git -e ENV_STRING="New Deployment from CLI"
+----
+
+Expose a route:
+
+[source%nowrap,console]
+----
+$ oc expose service/fastapi-quickstart-project --port=8000
+----
+
+Services created using `new-app` to default to port `8080` if not specified, the following command is very useful to patch an existing service, in this case changing it to port 8000:
+
+[source%nowrap,console]
+----
+$ oc patch svc fastapi-quickstart-project --type merge --patch '{"spec":{"ports":[{"port": 8000, "targetPort": 8000 }]}}'
+----
+
+See https://github.com/sclorg/s2i-python-container for probably the best Python s2i images available.
+
+Because, this application was built from `ubi8/python-38` it had to download and install all the packages defined in our projects `requirements.txt` file, taking some time. How about using an updated S2I image that satisfy all these dependencies?
+
+[#custom_s2i]
+=== Custom S2I
+
+For totality, these steps are included on how you might build your own S2I image, tag and push it to build application in OpenShift. The following `Dockerfile` include additional packages that are required for later exercise in this guide. Using this custom image will save time during S2I build stages.
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-s2i/
+----
+
+Remove existing `s2i-fastapi` directory to start over:
+
+[source%nowrap,console]
+----
+$ rm -rf s2i-fastapi
+----
+
+Recreate a skeleton S2I project
+
+[source%nowrap,console]
+----
+$ s2i create s2i-fastapi s2i-fastapi
+$ cd s2i-fastapi
+----
+
+And update the `Dockerfile` to look like this:
+
+[source%nowrap,console]
+----
+$ vi Dockerfile
+----
+
+[source%nowrap,dockerfile]
+----
+FROM ubi8/python-39
+
+LABEL maintainer="Richard Walker"
+LABEL io.k8s.description="Platform for building FastAPI applications" \
+      io.k8s.display-name="builder 0.0.1" \
+      io.openshift.expose-services="8000:http" \
+      io.openshift.tags="builder,python,python39"
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=UTF-8
+
+RUN pip install --upgrade pip
+RUN pip install fastapi uvicorn jinja2 aiofiles environs pytest requests prometheus-client prometheus-fastapi-instrumentator
+
+COPY ./s2i/bin/ /usr/libexec/s2i
+
+USER root
+
+RUN chown -R 1001:1001 /opt/app-root/src
+
+USER 1001
+
+EXPOSE 8000
+
+CMD ["/usr/libexec/s2i/usage"]
+----
+
+Only update the `run` script this time (meaning the standard `assemble` script is in place and will include `pip install -r requirements.txt`)
+
+[source%nowrap,console]
+----
+$ vi s2i/bin/run
+----
+
+[source%nowrap,bash]
+----
+#!/bin/bash -e
+#
+# S2I run script for the 's2i-fastapi' image.
+# The run script executes the server that runs your application.
+#
+# For more information see the documentation:
+# https://github.com/openshift/source-to-image/blob/master/docs/builder_image.md
+#
+
+python main.py
+----
+
+Build the image:
+
+[source%nowrap,console]
+----
+$ podman build -t local/fastapi-s2i-img:1.1 .
+----
+
+[source%nowrap,console]
+----
+$ podman tag localhost/local/fastapi-s2i-img:1.1 default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-quickstart-project/fastapi-s2i-img:1.1
+$ podman push default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-quickstart-project/fastapi-s2i-img:1.1 --tls-verify=false
+----
+
+[source%nowrap,console]
+----
+$ oc get is
+----
+
+Make sure any previous deployment is removed:
+
+[source%nowrap,console]
+----
+$ oc delete route fastapi-quickstart-project
+$ oc delete svc fastapi-quickstart-project
+$ oc delete deploy fastapi-quickstart-project
+----
+
+
+[source%nowrap,console]
+----
+$ oc new-app image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/fastapi-s2i-img:1.1~https://github.com/walkersblog/fastapi-quickstart-project.git -e ENV_STRING="New Deployment using custom S2I"
+----
+
+Watch the progress and see if the deployment builds any faster:
+
+[source%nowrap,console]
+----
+$ watch oc get pods
+----
+
+If you look at the logs of the build pod, for example `oc logs fastapi-quickstart-project-1-build` you should see all the packages state `Requirement already satisfied`, whizzing through.
+
+[source%nowrap,console]
+----
+$ oc get svc
+$ oc expose service/fastapi-quickstart-project --port=8000
+----
+
+That is Source-to-Image in a nut shell, useful to know what is going on under the hood, and with more time and experimentation you can create your own tailored and trusted S2I images for building applications, that come more pre-loaded to speed up S2I builds.
+
+Clean up:
+
+[source%nowrap,console]
+----
+$ oc delete deploy fastapi-quickstart-project
+$ oc delete svc fastapi-quickstart-project
+$ oc delete route fastapi-quickstart-project
+----
+
+
+// This is a comment and won't be rendered.

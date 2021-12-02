@@ -1,0 +1,386 @@
+= Monitoring
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction
+
+OpenShift comes with cluster monitoring which is a fully deployment Prometheus stack. To gain a deep understanding of how that stack works, take a look at deploying it manually on servers https://www.walkersblog.net/article/monitoring/[here]. And for info on how to deploy monitoring with persistence storage, have a look here.
+
+This guide however, assume monitoring is available on your OpenShift Cluster, as a developer you just want to use it for your applications in your project.
+
+By default, the monitoring stack is more or less reserved for monitoring the cluster, for an OpenShift operations teams to enjoy.
+
+As a Cluster Admin, to enable all the monitoring goodness for application running in a project, first check if there is any configuration already:
+
+[source%nowrap,console]
+----
+$ oc -n openshift-monitoring edit configmap cluster-monitoring-config
+----
+
+If you get the error:
+
+[source%nowrap,console]
+----
+Error from server (NotFound): configmaps "cluster-monitoring-config" not found
+----
+
+Then you need to create one, else just add or ensure `enableUserWorkload: true` is enabled.
+
+To create a configuration:
+
+[source%nowrap,console]
+----
+$ vi ocp/cluster-monitoring-config.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/cluster-monitoring-config.yaml
+----
+
+Then the following should return running pods:
+
+[source%nowrap,console]
+----
+$ oc -n openshift-user-workload-monitoring get pod
+
+NAME                                   READY   STATUS    RESTARTS   AGE
+prometheus-operator-6bf5bf76fc-x56d8   2/2     Running   0          110s
+prometheus-user-workload-0             5/5     Running   0          106s
+thanos-ruler-user-workload-0           3/3     Running   0          103s
+----
+
+Next create a user-defined workload monitoring config map:
+
+[source%nowrap,console]
+----
+$ vi ocp/user-workload-monitoring-config.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-workload-monitoring-config
+  namespace: openshift-user-workload-monitoring
+data:
+  config.yaml: |
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/user-workload-monitoring-config.yaml
+----
+
+In the Web Console, go to the Developer perspective -> "Observe" and view the Dashboard, Metrics, and Events.
+
+For regular users to view all metrics allow the following permission, in this case for the user `developer`, for example:
+
+[source%nowrap,console]
+----
+$ oc policy add-role-to-user monitoring-edit developer ocp-fastapi-quickstart-project
+$ oc policy add-role-to-user monitoring-rules-view developer ocp-fastapi-quickstart-project
+----
+
+To allow user to edit user workload configuration:
+
+[source%nowrap,console]
+----
+$ oc -n openshift-user-workload-monitoring adm policy add-role-to-user \
+  user-workload-monitoring-config-edit developer \
+  --role-namespace openshift-user-workload-monitoring
+----
+
+[#instrumentator]
+== Prometheus Instrumentator
+
+It's up to the developer to include and make available Prometheus metrics in their applications.
+
+Let's update the FastAPI project once again to expose Prometheus metrics.
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-project
+$ . venv/bin/activate
+----
+
+First, install the following packages
+
+[source%nowrap,console]
+----
+$ pip install prometheus-client
+$ pip install prometheus-fastapi-instrumentator
+----
+
+[source%nowrap,console]
+----
+$ pip freeze > requirements.txt
+----
+
+=== Add Metrics to app
+
+The `prometheus-fastapi-instrumentator` give a ton of metrics out-of-the-box, to enable it update `main.py`, import the `Instrumentator` and expose the metrics:
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+import uvicorn
+from api import motd, script_wrapper
+from views import home
+from starlette.staticfiles import StaticFiles
+from environs import Env
+from prometheus_fastapi_instrumentator import Instrumentator # New
+
+main_app = fastapi.FastAPI()
+
+Instrumentator().instrument(main_app).expose(main_app) # New
+
+def configure():
+    configure_routing()
+    configure_env_vars()
+
+
+def configure_env_vars():
+    env = Env()
+    env.read_env()
+    if not env("ENV_STRING"):
+        print(f"WARNING: environment variable ENV_STRING not found")
+        raise Exception("environment variable ENV_STRING not found.")
+    else:
+        home.env_string = env("ENV_STRING")
+
+
+def configure_routing():
+    main_app.mount('/static', StaticFiles(directory='static'), name='static')
+    main_app.include_router(motd.router)
+    main_app.include_router(home.router)
+    main_app.include_router(script_wrapper.router)
+
+
+if __name__ == '__main__':
+    configure()
+    uvicorn.run(main_app, host='0.0.0.0', port=8000)
+else:
+    configure()
+
+----
+
+That's it for the default metrics, run the application with `/metrics` to view, the application now has stuff for Prometheus to scrape.
+
+http://localhost:8000/metrics
+
+
+=== Custom Metric
+
+To add your own metrics, a little work is done, in this example a basic page counter is added.
+
+Create a new directory, that will contain custom metrics:
+
+[source%nowrap,console]
+----
+$ mkdir metrics
+----
+
+Add the following:
+
+[source%nowrap,console]
+----
+$ vi metrics/page_counter.py
+----
+
+[source%nowrap,python]
+----
+from prometheus_client import Counter
+
+page_counter = Counter('custom_page_counter', 'number of times page is hit')
+
+
+def increment_page_counter():
+    page_counter.inc()
+
+
+def get_current_page_counter_value():
+    return page_counter._value.get()
+----
+
+Let's update the home page view to include a page counter:
+
+[source%nowrap,console]
+----
+$ vi views/home.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+from starlette.requests import Request
+from starlette.templating import Jinja2Templates
+from typing import Optional
+from metrics.page_counter import increment_page_counter, get_current_page_counter_value # New
+
+env_string: Optional[str] = None
+
+router = fastapi.APIRouter()
+templates = Jinja2Templates('templates')
+
+
+@router.get('/')
+def home(request: Request):
+    increment_page_counter() # New
+    hits = get_current_page_counter_value() # New
+    return templates.TemplateResponse('home.html', {'request': request, 'env_string': env_string, 'page_hits': hits}) # Updated
+----
+
+Include the value on the home page:
+
+[source%nowrap,console]
+----
+$ vi templates/home.html
+----
+
+[source%nowrap,html]
+----
+<p>Page hits: {{ page_hits }}</p>
+----
+
+Now you have a home page hit counter visible on the home page, and moreover that number is derived from a new metric visible at `/metrics` called `custom_page_counter_total`. Something to work with in OpenShift.
+
+Update the tag in the Helm values:
+
+[source%nowrap,console]
+----
+$ vi helm/values.yaml
+----
+
+[source%nowrap,yaml]
+----
+tag: '1.4'
+----
+
+Commit the changes:
+
+[source%nowrap,yaml]
+----
+$ git add .
+$ git commit -am "added metrics"
+$ git push
+----
+
+Start the pipeline:
+
+[source%nowrap,console]
+----
+$ tkn pipeline start s2i-build-and-deploy \
+                     --namespace=ocp-fastapi-quickstart-project \
+                     --param GIT_REPO=https://github.com/walkersblog/fastapi-quickstart-project \
+                     --param IMAGE_NAME=fastapi-quickstart-app \
+                     --param IMAGE_TAG='1.4' \
+                     --workspace name=workspace,claimName=shared-workspace \
+                     --use-param-defaults \
+                     --showlog
+----
+
+Once everything has finished, the new version should be up and running with `/metrics` available.
+
+For example http://fastapi-quickstart-route-ocp-fastapi-quickstart-project.apps.walkers-lab.home.com/metrics
+
+[#metrics]
+== OpenShift Metrics
+
+Assuming everything is enabled correctly in OpenShift, it should just be a case of adding a Service Monitor what know metrics are available at `/metrics` to scrape:
+
+
+[source%nowrap,console]
+----
+$ vi ocp/service-monitor.yaml
+----
+
+
+[source%nowrap,yaml]
+----
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: prometheus-monitor
+  namespace: ocp-fastapi-quickstart-project
+  labels:
+    k8s-app: prometheus-monitor
+spec:
+  endpoints:
+  - interval: 30s
+    port: web
+    scheme: http
+  selector:
+    matchLabels:
+      app: fastapi-quickstart-app
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/service-monitor.yaml
+----
+
+After 30 seconds (or so), the metrics should be viewable via the Web Console.
+
+Go to Developer Perspective -> Observe -> Metrics -> Custom Query
+
+Type in `custom_page_counter_total` which is out bespoke metric, it should now be viewable:
+
+image::images/rapid-track/view_custom_metric.png[Metrics]
+
+This is where you can experiment with PromQL queries, like you would in a traditional Prometheus web console, for example `custom_page_counter_total > 20`
+
+[#alerts]
+=== OpenShift Alerts
+
+Once you have PromQL queries that would be of interest to be alerted on, simply add alert rules like this:
+
+[source%nowrap,console]
+----
+$ vi ocp/alert-rule.yaml
+----
+
+
+[source%nowrap,yaml]
+----
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hits-alert
+  namespace: ocp-fastapi-quickstart-project
+spec:
+  groups:
+  - name: example
+    rules:
+    - alert: HitCounterAlert
+      expr: custom_page_counter_total > 20
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/alert-rule.yaml
+----
+
+Hit the page until it goes over 20, and the alert should fire:
+
+image::images/rapid-track/alert_fire.png[Alerts]
+
+// This is a comment and won't be rendered.

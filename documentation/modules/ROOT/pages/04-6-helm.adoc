@@ -1,0 +1,502 @@
+== Helm
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction
+
+Like `pip` for Python and `dnf` or `yum` for Linux, Helm is a package management system, for templating Kubernetes objects.
+
+Download the client CLI tool from:
+
+[source%nowrap,console]
+----
+$ wget https://mirror.openshift.com/pub/openshift-v4/clients/helm/latest/helm-linux-amd64.tar.gz
+----
+
+[source%nowrap,console]
+----
+$ tar -xvf helm-linux-amd64.tar.gz -C /usr/local/bin/
+----
+
+[source%nowrap,console]
+----
+$ helm version
+----
+
+Using the OpenShift "deployment" example from previously, a new or similar project and deployment could be done by copying and modified the image stream, deployment, service and route and applying them with `oc create -f <FILENAME>`.
+
+[source%nowrap,text]
+----
+deployment.yaml
+imagestream.yaml
+route.yaml
+service.yaml
+----
+
+Helm enables us to template those files for reuse and versatility!
+
+[#git]
+== Git
+
+Ensure you are in the `fastapi-quickstart-project` directory:
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-project
+----
+
+[source%nowrap,console]
+----
+$ git checkout main
+----
+
+Create a new directory:
+
+[source%nowrap,console]
+----
+$ mkdir helm
+----
+
+== Helm Deployment
+
+[#ocp]
+=== OpenShift Setup
+
+Ensure your in the correct OpenShift project:
+
+[source%nowrap,console]
+----
+$ oc project ocp-fastapi-quickstart-project
+----
+
+In this example, we can continue working with either `fastapi-quickstart-app` or `fastapi-quickstart-img` assuming you are working through the guide and these are available.
+
+Or, if working in a new project, tag and push a know working application image into the OpenShit image registry for deployment within this project.
+
+[source%nowrap,console]
+----
+$ oc get is
+----
+
+If not, for reference, log into the image registry as a user, in this case `developer`, and tag/push an image:
+
+[source%nowrap,console]
+----
+$ podman login -u developer -p $(oc whoami -t) --tls-verify=false default-route-openshift-image-registry.apps.walkers-lab.home.com
+$ podman tag localhost/local/fastapi-s2i-img:1.1 default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-quickstart-project/fastapi-s2i-img:1.1
+$ podman push default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-quickstart-project/fastapi-s2i-img:1.1 --tls-verify=false
+----
+
+The key here is each project has it's own image registry "area" restricted by project, it is possible to allow access to images in other projects but keeping things tidy in each project works here.
+
+[#deploy]
+=== Helm Deployment
+
+For reference, you could create a fresh helm chart skeleton and modify to your needs, its worth doing so just to study it:
+
+[source%nowrap,console]
+----
+$ helm create fastapi-quickstart-chart && cd fastapi-quickstart-chart
+----
+
+However, just a easy to create from scratch:
+
+[source%nowrap,console]
+----
+$ mkdir -p helm/templates
+----
+
+Add `Chart.yaml`:
+
+[source%nowrap,console]
+----
+$ vi helm/Chart.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v2
+name: fastapi-quickstart-chart
+description: A Helm chart for Kubernetes
+
+type: application
+
+version: 0.1.0
+
+appVersion: "1.16.0"
+----
+
+Add `deployment.yaml`:
+
+[source%nowrap,console]
+----
+$ vi helm/templates/deployment.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-quickstart-deploy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fastapi-quickstart-deploy
+  template:
+    metadata:
+      labels:
+        app: fastapi-quickstart-deploy
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: fastapi-quickstart-app
+        image: 'image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/fastapi-quickstart-app:1.2'
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ENV_STRING
+          value: 'Hello Helm'
+----
+
+Notice the section:
+
+[source%nowrap,yaml]
+----
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+----
+
+For Helm to be able to access the registry it requires registry credentials stored in a secret define as `docker-registry`. Update the server, username and password (obtained with `oc whoami -t`):
+
+[source%nowrap,console]
+----
+$ oc create secret docker-registry ocpregcred --docker-server=image-registry.openshift-image-registry.svc:5000 --docker-username=developer --docker-password=sha256~PWSCR95ysbyDP8e4843kVbZEtFokJdCLqavBLKxgh34
+----
+
+And add the credential in `values.yaml`:
+
+[source%nowrap,console]
+----
+$ vi helm/values.yaml
+----
+
+[source%nowrap,yaml]
+----
+imagePullSecrets:
+  - name: ocpregcred
+----
+
+Install the Helm chart into the OpenShift project:
+
+IMPORTANT: Make sure any existing `deployment`, `service`, or `route` are removed because helm will fail if resources already exist that are not managed by helm.
+
+[source%nowrap,console]
+----
+$ helm install fastapi-quickstart-chart helm/
+----
+
+You should see the deployment pull the image, and run a pod:
+
+[source%nowrap,console]
+----
+$ oc get pods
+NAME                                 READY   STATUS    RESTARTS   AGE
+fastapi-openshift-7954fcc679-qlxw2   1/1     Running   0          2m41s
+----
+
+Uninstall the helm chart:
+
+[source%nowrap,console]
+----
+$ helm uninstall fastapi-quickstart-chart
+----
+
+[#helm_secret]
+=== Helm Secret
+
+It's worth noting that using helm is great for cleaning up too!
+
+You could now copy the YAML from the OpenShift web console of the `ocpregcred` secret added, and include it in Helm. The docker-registry secret is an encoded JSON, lets configure helm to add the secret.
+
+NOTE: Do not actually store secrets in Helm Charts/version control, this is for example purposes!!!
+
+Add `secret.yaml`
+
+[source%nowrap,console]
+----
+$ vi helm/templates/secret.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ocpregcred
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: {{ template "imagePullSecret" . }}
+----
+
+To convert to base64 from values defined in `values.yaml`, add a helper file:
+
+[source%nowrap,console]
+----
+$ vi helm/templates/_helpers.tpl
+----
+
+[source%nowrap,jinja]
+----
+{{- define "imagePullSecret" }}
+{{- printf "{\"auths\": {\"%s\": {\"auth\": \"%s\"}}}" .Values.imageCredentials.registry (printf "%s:%s" .Values.imageCredentials.username .Values.imageCredentials.password | b64enc) | b64enc }}
+{{- end }}
+----
+
+And finally, add the values in `values.yaml`:
+
+[source%nowrap,console]
+----
+$ vi helm/values.yaml
+----
+
+[source%nowrap,yaml]
+----
+imageCredentials:
+  registry: image-registry.openshift-image-registry.svc:5000
+  username: developer
+  password: sha256~PWSCR95ysbyDP8e4843kVbZEtFokJdCLqavBLKxgh34
+----
+
+Use the following command to review the resulting output generating from the templates:
+
+[source%nowrap,console]
+----
+$ helm template fastapi-quickstart-chart helm/
+----
+
+You will also need to manually delete the before Helm can manage it:
+
+[source%nowrap,console]
+----
+$ oc delete secret ocpregcred
+----
+
+Install the chart again:
+
+[source%nowrap,console]
+----
+$ helm install fastapi-quickstart-chart helm/
+----
+
+Hopefully, the secret and the deployment where created in the OpenShift project and all is working. There is still the Image Stream, Service and Route to be created. The process is the same, adding the templates and substituting values. By examining the examples created in a default `helm create helm-example`, this should start to make more sense.
+
+
+[#helm_service]
+=== Helm Service
+
+Go ahead and add `templates/service.yaml`, the following is all that is needed, the `ClusterIP` will be assigned automatically:
+
+[source%nowrap,console]
+----
+$ vi helm/templates/service.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-quickstart-service
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: fastapi-quickstart-deploy
+  sessionAffinity: None
+  type: ClusterIP
+----
+
+
+[#helm_route]
+=== Helm Route
+
+Finally, add the `templates/route.yaml`:
+
+[source%nowrap,console]
+----
+$ vi helm/templates/route.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: fastapi-quickstart-route
+spec:
+  port:
+    targetPort: 8000
+  to:
+    kind: Service
+    name: fastapi-quickstart-service
+    weight: 100
+  wildcardPolicy: None
+----
+
+And Reapply:
+
+[source%nowrap,console]
+----
+$ helm uninstall fastapi-quickstart-chart
+$ helm install fastapi-quickstart-chart helm/
+----
+
+[#helm_templating]
+=== Helm Templating
+
+Now there is a fully working set of templates for deploying a complete OpenShift Deployment, it's quite simple now to work through these templates and substitute parameters, defining values in `values.yaml`. The helm chart can eventually become application agnostic, and therefore reusable for various applications.
+
+Update the values and templates like so:
+
+[source%nowrap,console]
+----
+$ vi helm/values.yaml
+----
+
+[source%nowrap,yaml]
+----
+imagePullSecrets:
+  - name: ocpregcred
+  -
+imageCredentials:
+  registry: image-registry.openshift-image-registry.svc:5000
+  username: developer
+  password: sha256~jOnK5NAToGPLqM_uJw8cPcNBzKyPyWL5TNuSOUIjVps
+
+appName: fastapi-quickstart
+
+imageName: fastapi-quickstart-app
+tag: '1.2'
+
+ports:
+  port: 8000
+  targetPort: 8000
+
+namespace: ocp-fastapi-quickstart-project
+----
+
+[source%nowrap,console]
+----
+$ vi helm/templates/deployment.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appName }}-deploy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}-deploy
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}-deploy
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: fastapi-quickstart
+        image: 'image-registry.openshift-image-registry.svc:5000/{{ .Values.namespace }}/{{ .Values.imageName }}:{{ .Values.tag }}'
+        imagePullPolicy: Always
+        ports:
+        - containerPort: {{ .Values.ports.targetPort }}
+        env:
+        - name: ENV_STRING
+          value: 'Hello Helm'
+----
+
+[source%nowrap,console]
+----
+$ vi helm/templates/service.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-service
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: {{ .Values.ports.port }}
+    protocol: TCP
+    targetPort: {{ .Values.ports.targetPort }}
+  selector:
+    app: {{ .Values.appName }}-deploy
+  sessionAffinity: None
+  type: ClusterIP
+----
+
+[source%nowrap,console]
+----
+$ vi helm/templates/route.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ .Values.appName }}-route
+spec:
+  port:
+    targetPort: {{ .Values.ports.targetPort }}
+  to:
+    kind: Service
+    name: {{ .Values.appName }}-service
+    weight: 100
+  wildcardPolicy: None
+----
+
+[source%nowrap,console]
+----
+$ helm uninstall fastapi-quickstart-chart
+$ helm install fastapi-quickstart-chart helm/
+----
+
+And that is Helm in a nut shell.
+
+Commit the helm cart:
+
+[source%nowrap,console]
+----
+$ git add helm
+$ git commit -m "added helm chart"
+$ git push
+----
+
+// This is a comment and won't be rendered.

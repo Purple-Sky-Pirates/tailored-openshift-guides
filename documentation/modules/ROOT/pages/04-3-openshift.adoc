@@ -223,6 +223,7 @@ spec:
   wildcardPolicy: None
 ----
 
+[#deploy_config]
 ==== Deployment Config
 
 Create a new OpenShift project:

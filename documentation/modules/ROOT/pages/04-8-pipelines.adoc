@@ -1,0 +1,289 @@
+= Update Pipeline
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction
+
+All the moving parts are now complete, a container image can be built to run a Python application from source code, and control over how it is assembled and run is done by including custom scripts within a code project. This Source-to-Image build process can be done manually via the command line or automated using OpenShift pipeline Tasks. Final application container images can be tagged and pushed to an image registry and deployed to OpenShift by creating a deployment, service and route, or, more conveniently, deployed by templating those deployment components using Helm. Helm deployments can also be automated and mandated using ArgoCD to monitor the helm chart.
+
+A final step could be to revisit the OpenShift pipeline and remove the deploy, patch and expose steps. These were always going to be troublesome to manage on re-runs and de-provisioning of deployments. Why not have a single final step that triggers an Argo CD application sync on-demand? (The default sync for an Argo CD app is three minutes if you are happy to wait.)
+
+
+There is a community task available for this:
+
+[source%nowrap,yaml]
+----
+$ vi ocp/argocd-task-sync-and-wait.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: argocd-task-sync-and-wait
+  namespace: ocp-fastapi-quickstart-project
+spec:
+  description: >-
+    This task syncs (deploys) an Argo CD application and waits for it to be
+    healthy.
+
+    To do so, it requires the address of the Argo CD server and some form of
+    authentication either a username/password or an authentication token.
+  params:
+    - description: name of the application to sync
+      name: application-name
+      type: string
+    - default: HEAD
+      description: the revision to sync to
+      name: revision
+      type: string
+    - default: '--'
+      name: flags
+      type: string
+    - default: v2.1.6
+      name: argocd-version
+      type: string
+  stepTemplate:
+    envFrom:
+      - configMapRef:
+          name: argocd-env-configmap
+      - secretRef:
+          name: argocd-env-secret
+    name: ''
+    resources: {}
+  steps:
+    - image: 'docker.io/argoproj/argocd:$(params.argocd-version)'
+      name: login
+      resources: {}
+      script: >
+        if [ -z "$ARGOCD_AUTH_TOKEN" ]; then
+          yes | argocd login $ARGOCD_SERVER --username=$ARGOCD_USERNAME --password=$ARGOCD_PASSWORD --insecure;
+        fi
+
+        argocd app sync "$(params.application-name)" --revision
+        "$(params.revision)" "$(params.flags)"
+
+        argocd app wait "$(params.application-name)" --health "$(params.flags)"
+----
+
+[source%nowrap,yaml]
+----
+$ oc create -f ocp/argocd-task-sync-and-wait.yaml
+----
+
+NOTE: Added `--insecure` to the `argocd login` command to workaround SSL issue and change the default `argocd-version` to 2.1, avoiding a `unsatisfied client version constraint` error.
+
+IMPORTANT: Putting the variables `$ARGOCD_SERVER`, `$ARGOCD_USERNAME`, `$ARGOCD_PASSWORD` in double quotes `""` causes authentication to fail.
+
+Studying this Task, you can see it needs credentials and a URL to log into Argo CD, just like the CLI login done in the previous Argo CD section. It is expecting a `configMap` with these details, for example:
+
+
+[source%nowrap,console]
+----
+$ vi ocp/argocd_configmap.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-env-configmap
+  namespace: ocp-fastapi-quickstart-project
+data:
+  ARGOCD_SERVER: openshift-gitops-server-openshift-gitops.apps.walkers-lab.home.com
+  ARGOCD_USERNAME: admin
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/argocd_configmap.yaml
+----
+
+And a secret `argocd-env-secret`, rember the password is encoded so use the output of for example:
+
+[source%nowrap,console]
+----
+$ echo $argoPass | base64
+----
+
+[source%nowrap,console]
+----
+$ vi ocp/argocd_secret.yaml
+----
+
+[source%nowrap,yaml]
+----
+kind: Secret
+apiVersion: v1
+metadata:
+  name: argocd-env-secret
+  namespace: ocp-fastapi-quickstart-project
+data:
+  ARGOCD_PASSWORD: MGxScHNDbWJZOTdxWHJCZ2Uza0FTWjJuRVBvTHlWZFQK
+type: Opaque
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/argocd_secret.yaml
+----
+
+Update the pipeline, removing the `deploy`, `patch` and `route` steps and replacing it with the `custom-argocd-task-sync-and-wait` task:
+
+[source%nowrap,console]
+----
+$ vi ocp/pipeline-5.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+  namespace: ocp-fastapi-quickstart-project
+spec:
+  params:
+    - default: fastapi-quickstart-app
+      name: IMAGE_NAME
+      type: string
+    - default: 'https://github.com/walkersblog/fastapi-quickstart'
+      name: GIT_REPO
+      type: string
+    - default: main
+      name: GIT_REVISION
+      type: string
+    - default: Hello from Pipeline
+      name: MESSAGE
+      type: string
+  tasks:
+    - name: fetch-repository
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: deleteExisting
+          value: 'true'
+      taskRef:
+        kind: ClusterTask
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: workspace
+    - name: pytest
+      params:
+        - name: PYTHON
+          value: latest
+        - name: SOURCE_PATH
+          value: .
+        - name: REQUIREMENTS_FILE
+          value: requirements.txt
+      runAfter:
+        - fetch-repository
+      taskRef:
+        kind: Task
+        name: pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: build
+      params:
+        - name: IMAGE
+          value: >-
+            image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME)
+        - name: TLSVERIFY
+          value: 'false'
+      runAfter:
+        - pytest
+      taskRef:
+        kind: ClusterTask
+        name: s2i-python
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: argocd-task-sync-and-wait
+      params:
+        - name: application-name
+          value: fastapi-quickstart-app
+        - name: revision
+          value: main
+        - name: flags
+          value: '--'
+        - name: argocd-version
+          value: v2.1.6
+      runAfter:
+        - build
+      taskRef:
+        kind: Task
+        name: argocd-task-sync-and-wait
+  workspaces:
+    - name: workspace
+----
+
+[source%nowrap,console]
+----
+$ oc replace -f ocp/pipeline-5.yaml
+----
+
+image::argocd-pipeline.png[Pipeline]
+
+Running the pipeline now, hands off to ArgoCD to ensure the everything is deployed correctly.
+
+Let's make a small update the the application and update the tag in helm:
+
+[source%nowrap,console]
+----
+$ vi templates/home.html
+----
+
+Add a new paragraph, for example:
+
+[source%nowrap,html]
+----
+<p>Code Update</p>
+----
+
+Update the tag in the Helm values:
+
+[source%nowrap,console]
+----
+$ vi helm/values.yaml
+----
+
+[source%nowrap,yaml]
+----
+tag: '1.3'
+----
+
+Commit the changes:
+
+[source%nowrap,yaml]
+----
+$ git add .
+$ git commit -am "pipeline update"
+$ git push
+----
+
+Start the pipeline:
+
+[source%nowrap,console]
+----
+$ tkn pipeline start s2i-build-and-deploy \
+                     --namespace=ocp-fastapi-quickstart-project \
+                     --param GIT_REPO=https://github.com/walkersblog/fastapi-quickstart-project \
+                     --param IMAGE_NAME=fastapi-quickstart-app \
+                     --param IMAGE_TAG='1.3' \
+                     --workspace name=workspace,claimName=shared-workspace \
+                     --use-param-defaults \
+                     --showlog
+----
+
+A couple things will be happening, ArgoCD will at some point try to deploy tag 1.3, but will fail until it's available, yet it won't bring down the existing (working) application until it can.
+The pipeline will build the new image tag, and finally attempt to sync ArgoCD again, by which time it will successful deploy the new image and the code change should be visible.
+
+TIP: If thing start failing you might need to repeat and update the `imageCredentials:` `paswword:` using `oc whoami -t` and commit the change.
+
+// This is a comment and won't be rendered.

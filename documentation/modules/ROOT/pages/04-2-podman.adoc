@@ -33,6 +33,7 @@ podman run -it ubi8/python-39:latest /bin/bash
 (app-root) exit
 ----
 
+[#dockerfile]
 === Dockerfile
 
 The previous exploration tell us that the default current working directory is `/opt/app-root/src`, and we know OpenShift will not run containers as `root`.ca
