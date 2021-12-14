@@ -4,7 +4,7 @@ include::_attributes.adoc[]
 [#introduction]
 == Introduction to FastAPI
 
-FastAPI is a modern, fast (high-performance), web framework for building APIs with Python 3.6+ based on standard Python type hints. Similar to Flask yet built with async and await support from the ground up.
+This guide starts with writing a simple Python FastAPI web application from scratch using containers to run the application. More importantly, deploying said containers on OpenShift using tools including Source-to-Image, Tekton Pipelines, Helm and ArgoCD. Additionally, a final section on how to run Python containers as serverless using Knative.
 
-This section walks through writing a starter API, containerizing it with Podman, and then onto using Helm and ArgoCD, and finally KNative. 
+It’s best to follow along from scratch rather than simply cloning the code project used throughout this guide. However, the coding exercise is quick yet thorough in that it includes an environment variable and a unit test. Having an intimate understanding of these characteristics should hopefully provide some inspiration for your real-world projects.
 

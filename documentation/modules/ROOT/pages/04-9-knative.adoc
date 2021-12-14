@@ -1,0 +1,571 @@
+= Knative
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction
+
+The Red Hat OpenShift Serverless operator provides a collection of APIs that enables containers, microservices and functions to run "serverless". Serverless applications can scale up and down (to zero) on demand and be triggered by a number of event sources. OpenShift Serverless integrates with a number of platform services, such as Metering and Monitoring and it is based on the open source project Knative.
+
+[#cli]
+== Knative CLI tool
+
+[source%nowrap,console]
+----
+$ wget https://github.com/knative/client/releases/download/knative-v1.0.0/kn-linux-amd64
+----
+
+[source%nowrap,console]
+----
+$ sudo mv kn-linux-amd64 /usr/local/bin/kn
+----
+
+[source%nowrap,console]
+----
+$ sudo chmod +x /usr/local/bin/kn
+----
+
+[#operator]
+== Operator
+
+Install the Red Hat OpenShift Serverless operator. Once installed and "Ready",  navigate to "Install Operators" -> "Red Hat OpenShift Serverless" -> "Knative Serving", and select "Create KnativeServing".
+
+Wait for the status to include "Ready" under status:
+
+image::KnativeServing.png[Knative Serving]
+
+[#project]
+== OpenShift Project
+
+In this example, as a developer, create a new project to work in:
+
+[source%nowrap,console]
+----
+$ oc new-project ocp-fastapi-knative-project
+----
+
+[#serving]
+== Serving Service
+
+Using the standard approach, tag and push the `fastapi-quickstart-img` container image to the OpenShift project.
+
+[source%nowrap,console]
+----
+$ podman tag localhost/local/fastapi-quickstart-img:1.0 default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-knative-project/fastapi-quickstart:1.0
+----
+
+[source%nowrap,console]
+----
+$ podman login -u developer -p $(oc whoami -t) --tls-verify=false default-route-openshift-image-registry.apps.walkers-lab.home.com
+----
+
+[source%nowrap,console]
+----
+$ podman push default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-knative-project/fastapi-quickstart:1.0 --tls-verify=false
+----
+
+View the image stream:
+
+[source%nowrap,console]
+----
+$ oc get is
+----
+
+[#deploy]
+== Serverless deployment
+
+A new option will now be available when adding a new deployment. This is easier to see via the web console.
+
+In the developer perspective, select "+Add" and "Container images":
+
+image::knative_deploy.png[Knative Serving]
+
+Under Resources, select the "Serverless Deployment", and in this case, add the Target port to be `8000`.
+
+The resulting Topology will look like this, the initial deployment will run a pod:
+
+image::knative_topology.png[Knative Serving]
+
+But after a short time of inactivity the pod will be rolled down to zero.
+
+image::knative_term.png[Knative Serving]
+
+image::knative_zero.png[Knative Serving]
+
+Only when the application is accessed will a pod be spun back up to serve the application.
+
+
+With this working, it's also possible to create or delete Knative services using YAML using the following `apiVersion` and `kind`, for example:
+
+[source%nowrap,console]
+----
+$ vi ocp/knative_service.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: fastapi-quickstart
+  namespace: ocp-fastapi-knative-project
+  labels:
+    app.kubernetes.io/component: fastapi-quickstart
+    app.kubernetes.io/instance: fastapi-quickstart
+    app.kubernetes.io/name: fastapi-quickstart
+    app.kubernetes.io/part-of: fastapi-quickstart-app
+    app.openshift.io/runtime: python
+    app.openshift.io/runtime-namespace: ocp-fastapi-knative-project
+    app.openshift.io/runtime-version: latest
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/target: '100'
+        autoscaling.knative.dev/targetUtilizationPercentage: '70'
+        autoscaling.knative.dev/window: 60s
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/component: fastapi-quickstart
+        app.kubernetes.io/instance: fastapi-quickstart
+        app.kubernetes.io/name: fastapi-quickstart
+        app.kubernetes.io/part-of: fastapi-quickstart-app
+        app.openshift.io/runtime: python
+        app.openshift.io/runtime-namespace: ocp-fastapi-knative-project
+        app.openshift.io/runtime-version: latest
+    spec:
+      containerConcurrency: 0
+      containers:
+        - image: >-
+            image-registry.openshift-image-registry.svc:5000/ocp-fastapi-knative-project/fastapi-quickstart:1.0
+          imagePullPolicy: Always
+          name: fastapi-quickstart
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          readinessProbe:
+            successThreshold: 1
+            tcpSocket:
+              port: 0
+          resources: {}
+      enableServiceLinks: false
+      timeoutSeconds: 300
+  traffic:
+    - latestRevision: true
+      percent: 100
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/knative_service.yaml
+----
+
+Note that when a service is deleted it does clean all the resources such as routes and services for you.
+
+It's easier to use the `kn` command to work with Knative service services via the CLI:
+
+[source%nowrap,console]
+----
+$ kn service list
+----
+
+[source%nowrap,console]
+----
+$ kn service delete fastapi-quickstart
+----
+
+[#wrapper]
+== FastAPI Script Wrapper
+
+This example covers a scenario to replicate Lambda functionality using Knative Serving and writing simple APIs using FastAPI. The code will merely add additional routes to the coding example from the start of this guide.
+
+From the route of the project:
+
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-project
+----
+
+Create a new directory, that will contain regular Python scripts, or functions in this case:
+
+[source%nowrap,console]
+----
+$ mkdir scripts
+----
+
+Add the following three examples:
+
+[source%nowrap,console]
+----
+$ vi scripts/example1.py
+----
+
+[source%nowrap,python]
+----
+def add_values(*args):
+    for arg in args:
+        int(arg)
+    return sum(args)
+----
+
+[source%nowrap,console]
+----
+$ vi scripts/example2.py
+----
+
+[source%nowrap,python]
+----
+def concat_strings(*args):
+    return_string = ""
+    for arg in args:
+        return_string = return_string + str(arg).lower()
+    return return_string[::-1]
+----
+
+[source%nowrap,console]
+----
+$ vi scripts/example3.py
+----
+
+[source%nowrap,python]
+----
+import time
+from datetime import datetime
+
+
+def consume_memory(gig: int, minutes: int):
+    # Get current time
+    now = datetime.now()
+    start_time = now.strftime("%H:%M:%S")
+    print("Current Time =", start_time)
+
+    # Calc number of GB into bytes
+    number_of_bytes = 1024000000 * gig
+
+    # Calc minutes into seconds
+    number_of_seconds = 60 * minutes
+
+    # Use up memory in bytes
+    temp_array = bytearray(number_of_bytes)
+
+    # Sleep for number of seconds
+    time.sleep(number_of_seconds)
+
+    # Get current time
+    now = datetime.now()
+    end_time = now.strftime("%H:%M:%S")
+    print("Current Time =", end_time)
+
+    return_string = "Used " \
+                    + str(gig) \
+                    + "GB of memory for " \
+                    + str(number_of_seconds) \
+                    + " seconds. " \
+                    + "Started at: " \
+                    + str(start_time)  \
+                    + ". Ended at:" \
+                    + str(end_time)  \
+                    + "."
+
+    return return_string
+----
+
+The first example is a simple function that accepts any number of integers and returns their total sum, and the second example takes any number of strings, concatenates them into one string, ensures all characters are low case and reverses all the characters.
+
+The third example, takes two integers, the first being the number of gigabytes of memory to consume, and the second the number of minutes to wait before completing, returning a string containing the start and end time (this example is useful for testing Knative later).
+
+However, the logic could be anything, the point is we have a few independent Python scripts that might represent a Lambda function.
+
+The task now is to create a route using FastAPI that accept a post request, enabling the passing in values, call the script to perform the logic, and return the result.
+
+To do this add the following API to the project:
+
+[source%nowrap,console]
+----
+$ vi api/script_wrapper.py
+----
+
+[source%nowrap,python]
+----
+import fastapi
+import scripts.example1
+import scripts.example2
+import scripts.example3
+from pydantic import BaseModel
+
+router = fastapi.APIRouter()
+
+
+# Example 1 - Add two integers
+class Example1Values(BaseModel):
+    integer1: int = 10
+    integer2: int = 10
+
+
+@router.post('/api/example1/')
+def script(values: Example1Values):
+    result = scripts.example1.add_values(values.integer1, values.integer2)
+    return {
+        'result': result
+    }
+
+
+# Example 2 - Concatenate three strings
+class Example2Values(BaseModel):
+    string1: str = "HELLO"
+    string2: str = "WORLD"
+    string3: str = "Today"
+
+
+@router.post('/api/example2/')
+def script(values: Example2Values):
+    result = scripts.example2.concat_strings(values.string1, values.string2, values.string3)
+    return {
+        'result': result
+    }
+
+
+# Example 3 - Use memory and sleep
+class Example3Values(BaseModel):
+    gigabytes: int = 5
+    minutes: int = 1
+
+
+@router.post('/api/example3/')
+def script(values: Example3Values):
+    result = scripts.example3.consume_memory(values.gigabytes, values.minutes)
+    return {
+        'result': result
+    }
+----
+
+And in the `main.py` of the FastAPI project:
+
+[source%nowrap,console]
+----
+$ vi main.py
+----
+
+
+[source%nowrap,python]
+----
+import fastapi
+import uvicorn
+from api import motd, script_wrapper # New
+from views import home
+from starlette.staticfiles import StaticFiles
+from environs import Env
+
+main_app = fastapi.FastAPI()
+
+
+def configure():
+    configure_routing()
+    configure_env_vars()
+
+
+def configure_env_vars():
+    env = Env()
+    env.read_env()
+    if not env("ENV_STRING"):
+        print(f"WARNING: environment variable ENV_STRING not found")
+        raise Exception("environment variable ENV_STRING not found.")
+    else:
+        home.env_string = env("ENV_STRING")
+
+
+def configure_routing():
+    main_app.mount('/static', StaticFiles(directory='static'), name='static')
+    main_app.include_router(motd.router)
+    main_app.include_router(home.router)
+
+    # Script Wrapper
+    main_app.include_router(script_wrapper.router) # New
+
+
+if __name__ == '__main__':
+    configure()
+    uvicorn.run(main_app, host='0.0.0.0', port=8000)
+else:
+    configure()
+----
+
+The only caveat here, is that while the first two example scripts can in theory take any number of arguments, the API function need to be defined explicitly.
+
+Notice each function is defined using POST, for example `router.post`, and a `pydantic` `BaseModel` are used to define what values are accepted, and any defaults.
+
+These API functions should be self-explanatory, and all follow the same structure.
+
+Commit the changes:
+
+[source%nowrap,text]
+----
+$ git add .
+$ git commit -m "added script wrapper"
+$ git push
+----
+
+[#ocp_deploy]
+== OpenShift Deployment
+
+Build, tag and push a new version of the image:
+
+[source%nowrap,console]
+----
+$ podman build -t local/fastapi-quickstart-img:2.0 .
+----
+
+[source%nowrap,console]
+----
+$ podman tag localhost/local/fastapi-quickstart-img:2.0 default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-knative-project/fastapi-quickstart:2.0
+----
+
+[source%nowrap,console]
+----
+$ podman login -u developer -p $(oc whoami -t) --tls-verify=false default-route-openshift-image-registry.apps.walkers-lab.home.com
+----
+
+[source%nowrap,console]
+----
+$ podman push default-route-openshift-image-registry.apps.walkers-lab.home.com/ocp-fastapi-knative-project/fastapi-quickstart:2.0 --tls-verify=false
+----
+
+And deploy the Knative servicng service using tag `2.0`:
+
+[source%nowrap,console]
+----
+$ vi ocp/knative_service.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: fastapi-quickstart
+  namespace: ocp-fastapi-knative-project
+  labels:
+    app.kubernetes.io/component: fastapi-quickstart
+    app.kubernetes.io/instance: fastapi-quickstart
+    app.kubernetes.io/name: fastapi-quickstart
+    app.kubernetes.io/part-of: fastapi-quickstart-app
+    app.openshift.io/runtime: python
+    app.openshift.io/runtime-namespace: ocp-fastapi-knative-project
+    app.openshift.io/runtime-version: latest
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/target: '100'
+        autoscaling.knative.dev/targetUtilizationPercentage: '70'
+        autoscaling.knative.dev/window: 60s
+      creationTimestamp: null
+      labels:
+        app.kubernetes.io/component: fastapi-quickstart
+        app.kubernetes.io/instance: fastapi-quickstart
+        app.kubernetes.io/name: fastapi-quickstart
+        app.kubernetes.io/part-of: fastapi-quickstart-app
+        app.openshift.io/runtime: python
+        app.openshift.io/runtime-namespace: ocp-fastapi-knative-project
+        app.openshift.io/runtime-version: latest
+    spec:
+      containerConcurrency: 0
+      containers:
+        - image: >-
+            image-registry.openshift-image-registry.svc:5000/ocp-fastapi-knative-project/fastapi-quickstart:2.0
+          imagePullPolicy: Always
+          name: fastapi-quickstart
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          readinessProbe:
+            successThreshold: 1
+            tcpSocket:
+              port: 0
+          resources: {}
+      enableServiceLinks: false
+      timeoutSeconds: 300
+  traffic:
+    - latestRevision: true
+      percent: 100
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/knative_service.yaml
+----
+
+As always, with FastAPI you can head to http://localhost:8000/docs and play with these APIs via a browser, for reference here are the `curl` commands.
+
+Example 1:
+
+[source%nowrap,text]
+----
+curl -X 'POST' \
+  'https://fastapi-quickstart-ocp-fastapi-knative-project.apps.walkers-lab.home.com/api/example1/' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "integer1": 10,
+  "integer2": 10
+}' -k
+----
+
+[source%nowrap,json]
+----
+{
+  "result": 20
+}
+----
+
+Example 2:
+
+[source%nowrap,text]
+----
+curl -X 'POST' \
+  'https://fastapi-quickstart-ocp-fastapi-knative-project.apps.walkers-lab.home.com/api/example2/' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "string1": "HELLO",
+  "string2": "WORLD",
+  "string3": "Today"
+}' -k
+----
+
+[source%nowrap,json]
+----
+{
+  "result": "yadotdlrowolleh"
+}
+----
+
+Example 3:
+
+The default timeout for OpenShift routes is a few seconds, so you need to add an annotation for the application route to enable the timely API calls to work:
+
+[source%nowrap,console]
+----
+$ oc annotate route fastapi-quickstart-route --overwrite haproxy.router.openshift.io/timeout=120s
+----
+
+[source%nowrap,text]
+----
+curl -X 'POST' \
+  'https://fastapi-quickstart-ocp-fastapi-knative-project.apps.walkers-lab.home.com/api/example3/' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "gigabytes": 5,
+  "minutes": 1
+}' -k
+----
+
+[source%nowrap,json]
+----
+{
+  "result": "Used 5GB of memory for 60 seconds. Started at: 14:04:00. Ended at: 14:05:02."
+}
+----
+
+// This is a comment and won't be rendered.

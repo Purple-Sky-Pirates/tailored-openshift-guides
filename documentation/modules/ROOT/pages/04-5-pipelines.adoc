@@ -1,0 +1,1060 @@
+= Pipelines
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction to Tekton
+
+On a Red Hat Enterprise Linux host, install the `tkn` command line tool via a repository:
+
+[source%nowrap,console]
+----
+$ sudo dnf copr enable chmouel/tektoncd-cli
+$ sudo dnf install tektoncd-cli -y
+----
+
+Install the Red Hat OpenShift Pipelines operator via the OperatorHub in the OpenShift web console.
+
+With both the command line tool and pipeline deployed on the OpenShift cluster, test the command:
+
+[source%nowrap,console]
+----
+$ tkn version
+----
+
+[source%nowrap,console]
+----
+Client version: 0.21.0
+Pipeline version: v0.24.3
+Triggers version: v0.14.2
+----
+
+[#project]
+== Pipeline Project
+
+Ensure right OpenShift project, preferably with a user such as a developer:
+
+[source%nowrap,console]
+----
+$ oc project ocp-fastapi-quickstart-project
+----
+
+Check the pipeline service account is present:
+
+[source%nowrap,console]
+----
+$ oc get serviceaccount pipeline
+----
+
+Example output:
+
+[source%nowrap,console]
+----
+NAME       SECRETS   AGE
+pipeline   2         14s
+----
+
+[#workspaces]
+== Workspaces
+
+In the past the concept of adding Tekton "Resources" was the encouraged approach, today however, in current version the concept of "Workspaces" has arisen. When starting a pipeline you may notice a warning "Empty Directory doesn't support shared data between tasks.".
+
+In this case, a storage class if defined for NFS, a persistent volume is created, and a persistent volume claim called "shared-workspace" is created in the our OpenShift project `pipeline-project`.
+
+Ensure you in the right directory:
+
+[source%nowrap,console]
+----
+$ cd ~/projects/fastapi-quickstart-project
+----
+
+As a cluster admin, create a new storage class:
+
+[source%nowrap,console]
+----
+$ vi ocp/nfs-storage-class.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs
+provisioner: no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+----
+
+[source%nowrap,console]
+----
+$ oc create -f nfs-storage-class.yaml
+----
+
+[source%nowrap,console]
+----
+$ vi ocp/workspace-pv.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: shared-workspace-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteMany
+  nfs:
+    path: /home/shares/ocp/shared-workspace
+    server: 192.168.1.100
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/workspace-pv.yaml
+----
+
+**Log back in as user `develoepr`!**, and create a persistent volume claim:
+
+[source%nowrap,console]
+----
+$ vi ocp/workspace-pvc.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shared-workspace
+  namespace: ocp-fastapi-quickstart-project
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/workspace-pvc.yaml
+----
+
+You should now have a pending `pvc` in `ocp-fastapi-quickstart-project`:
+
+[source%nowrap,console]
+----
+$ oc get pvc
+NAME               STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+shared-workspace   Pending                                      nfs            4s
+----
+
+When a pipeline is executed using a workspace as `PersitentVolumeClaim` (coming up later), the `pvc` will be claimed, for example:
+
+[source%nowrap,console]
+----
+$ oc get pvc
+NAME               STATUS   VOLUME                CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+shared-workspace   Bound    shared-workspace-pv   10Gi       RWX            nfs            47s
+----
+
+[#s2i]
+== S2I Pipeline
+
+This section is using the standard OpenShift example `s2i-build-and-deploy`.
+
+**Ensure you're logged back into OpenShift as user `developer`!**
+
+For reference, here is the original YAML for the pipeline:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+spec:
+  params:
+    - name: IMAGE_NAME
+      type: string
+    - name: GIT_REPO
+      type: string
+    - name: GIT_REVISION
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: $(params.IMAGE_NAME)
+        - name: TLSVERIFY
+          value: "false"
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      runAfter:
+        - build
+      params:
+      - name: SCRIPT
+        value: |
+          oc new-app --docker-image $(params.IMAGE_NAME)
+----
+
+The above YAML has three `tasks` that make up the "steps" or "stages" in the pipeline, they are `fetch-repository`, `build` and `deploy`.
+
+The pipeline takes in three parameters to be input by the user upon running the pipeline, they are `IMAGE_NAME`, `GIT_REPO` and `GIT_REVISION`.
+
+Each of the three pipeline tasks/steps/stages (`fetch-repository`, `build` and `deploy`) use "ClusterTasks" - `git-clone`, `s2i-python` and `openshift-client` respectively. These are off-the-shelf "Tasks", but to understand what these tasks do, you can examine them (these may be complex), for example:
+
+[source%nowrap,console]
+----
+$ oc get clustertasks
+----
+
+[source%nowrap,console]
+----
+$ oc get clustertask git-clone -o yaml
+$ oc get clustertask s2i-python -o yaml
+$ oc get clustertask openshift-client -o yaml
+----
+
+All that matters for now is that each of these `clustertasks` are available for consumption and can accept a selection of there own parameters. If you examine the `git-clone` Cluster Task, you can see approximately 20 possible parameters but the pipeline definition is passing in 4, `url`, `revision`, `subdirectory` and `deleteExisting`.
+
+So, a "Pipeline" is a series of "Tasks" (or ClusterTasks in this case). A regular "Task" is just the same as a Cluster Task, accept you'll create it (or use a community Task that someone else has created).
+
+For now, let's get this "example" pipeline working.
+
+[#v1]
+=== Version 1
+
+To deploy the FastAPI coding example in this guide, an additional environment variable is required, else the application will fail to run.
+
+Add a new parameter called `MESSAGE` and update the `oc new-app --docker-image $(params.IMAGE_NAME)` line to include the `ENV_STRING` environment variable, and some defaults for good measure:
+
+[source%nowrap,console]
+----
+$ vi ocp/pipeline-1.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+spec:
+  params:
+    - default: image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/fastapi-quickstart-app
+      name: IMAGE_NAME
+      type: string
+    - default: '1.2'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/walkersblog/fastapi-quickstart-project'
+      name: GIT_REPO
+      type: string
+    - default: main
+      name: GIT_REVISION
+      type: string
+    - default: Hello from Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: $(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      runAfter:
+        - build
+      params:
+      - name: SCRIPT
+        value: |
+          oc new-app --docker-image $(params.IMAGE_NAME):$(params.IMAGE_TAG) -e ENV_STRING="$(params.MESSAGE)"
+----
+
+There is also an `IMAGE_TAG` parameter, to be clear and explicit regarding what version to deploy.
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/pipeline-1.yaml
+----
+
+You can view and delete pipeline with:
+
+[source%nowrap,console]
+----
+$ oc get pipeline
+$ oc delete pipeline s2i-build-and-deploy
+----
+
+You can start the pipeline via the web console, we want to push the application image to OpenShifts image registry, so explicitly define the whole path with the project name in it for `IMAGE_NAME`, for example `image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/fastapi-quickstart-app`. Add the `GIT_REPO`, `GIT_REVISION` and enter a string in `MESSAGE`.
+
+Crucially, this pipeline WILL FAIL if started with "Empty Directory" as it's workspace. If you correctly added the `pvc` earlier, moreover if you don't specify the explicit path for the `IMAGE_NAME` the push will failed grumbling about permissions, example:
+
+image::start-pipeline.png[Start Pipeline]
+
+Upon starting the pipeline, you will now see the `pvc` is claimed as mentioned earlier:
+
+[source%nowrap,console]
+----
+$ oc get pvc
+NAME               STATUS   VOLUME                CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+shared-workspace   Bound    shared-workspace-pv   10Gi       RWX            nfs            47s
+----
+
+The `fetch-repository` task does a git clone, if you have access you'll see the files on the storage file system. The `build` task does more or less what was done earlier in the "OpenShift S2I" section when deploying an application using S2I, it does a `s2i build`, and `buildah` image build and a `podman push` to commit the final image. The `deploy` task is then simply performing the `oc new-app --docker-image $(params.IMAGE_NAME) -e ENV_STRING=$(params.MESSAGE)` command to run the application. (Although this is currently limiting due to needing a service patch and route adding).
+
+The pipeline should run successfully with these parameters though.
+
+From the CLI, you can also use the `tkn` command to see the pipeline and runs:
+
+[source%nowrap,console]
+----
+$ tkn pipeline list
+$ tkn pipelinerun list
+----
+
+And follow the logs of a running pipeline, for example:
+
+[source%nowrap,console]
+----
+$ tkn pipelinerun logs s2i-build-and-deploy-lfqmdc -f
+----
+
+To run the pipeline from the CLI in the first place, use the following format, for example:
+
+[source%nowrap,console]
+----
+$ tkn pipeline start s2i-build-and-deploy \
+                     --namespace=ocp-fastapi-quickstart-project \
+                     --param GIT_REPO=https://github.com/walkersblog/fastapi-quickstart-project \
+                     --param IMAGE_NAME=fastapi-quickstart-app \
+                     --workspace name=workspace,claimName=shared-workspace \
+                     --use-param-defaults \
+                     --showlog
+----
+
+The deployment should be successful, but two more `openshift-client` tasks need to be added to do the port patch and expose the route.
+
+For now, you can manually patch and expose the route:
+
+[source%nowrap,console]
+----
+$ oc patch svc fastapi-quickstart-app --type merge --patch '{"spec":{"ports":[{"port": 8000, "targetPort": 8000 }]}}'
+$ oc expose service/fastapi-quickstart-app --port=8000
+----
+
+Moreover, if the pipeline was rerun, the deployment would fail (unless you give it a new unique IMAGE_NAME), but keeping things clean, delete the deployment and service:
+
+[source%nowrap,console]
+----
+$ oc delete deploy fastapi-quickstart-app
+$ oc delete svc fastapi-quickstart-app
+$ oc delete route fastapi-quickstart-app
+----
+
+[#v2]
+=== Version 2
+
+To add the patch and route tasks, a little refactor makes sense, so the `IMAGE_NAME` can be reused. The service needs to be patched before the route is added.
+
+Here is the complete pipeline YAML, including default parameters:
+
+[source%nowrap,console]
+----
+$ vi ocp/pipeline-2.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+spec:
+  params:
+    - default: fastapi-quickstart-app
+      name: IMAGE_NAME
+      type: string
+    - default: '1.2'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/walkersblog/fastapi-quickstart-project'
+      name: GIT_REPO
+      type: string
+    - default: main
+      name: GIT_REVISION
+      type: string
+    - default: Hello from Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      runAfter:
+        - build
+      params:
+      - name: SCRIPT
+        value: |
+          oc new-app --docker-image image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME):$(params.IMAGE_TAG) -e ENV_STRING="$(params.MESSAGE)"
+    - name: patch
+      params:
+        - name: SCRIPT
+          value: >
+            oc patch svc $(params.IMAGE_NAME) --type merge --patch
+            '{"spec":{"ports":[{"port": 8000, "targetPort": 8000 }]}}'
+      runAfter:
+        - deploy
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+    - name: expose
+      params:
+        - name: SCRIPT
+          value: |
+            oc expose service/$(params.IMAGE_NAME)
+      runAfter:
+        - patch
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+----
+
+[source%nowrap,console]
+----
+$ oc replace -f ocp/pipeline-2.yaml
+----
+
+Start the pipeline:
+
+[source%nowrap,console]
+----
+$ tkn pipeline start s2i-build-and-deploy \
+                     --namespace=ocp-fastapi-quickstart-project \
+                     --param GIT_REPO=https://github.com/walkersblog/fastapi-quickstart-project \
+                     --param IMAGE_NAME=fastapi-quickstart-app \
+                     --workspace name=workspace,claimName=shared-workspace \
+                     --use-param-defaults \
+                     --showlog
+----
+
+image::images/rapid-track/pipeline-v2.png[Pipeline]
+
+Clean up the deployment for the next exercise:
+
+[source%nowrap,console]
+----
+$ oc delete route fastapi-quickstart-app
+$ oc delete service fastapi-quickstart-app
+$ oc delete deploy fastapi-quickstart-app
+----
+
+[#v3]
+=== Version 3 - pytest
+
+An additional step in this pipeline example would be to demonstrate how to include a testing stage. This will be done by adding a community Task `pytest` that serves our needs perfectly.
+
+For this exercise the `.env` file is essential for the required environment variable for the application, and additionally a `pytest.ini` file that suppresses warnings `DeprecationWarning`, to keep things clean.
+
+[source%nowrap,console]
+----
+$ vi pytest.ini
+----
+
+[source%nowrap,ini]
+----
+[pytest]
+filterwarnings =
+    ignore::DeprecationWarning
+----
+
+It's worth noting the environment variable `ENV_STRING` is used from `.env` for the `pytest` stage but will still be overridden at deployment because passing it in at run time takes precedence.
+
+Adding such tasks is easy via the web console or CLI, here is the Task:
+
+[source%nowrap,console]
+----
+$ vi ocp/pytest_task.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: pytest
+  namespace: ocp-fastapi-quickstart-project
+spec:
+  description: This task will run pytest on the provided input.
+  params:
+    - default: latest
+      description: 'The used Python version, more precisely the tag for the Python image'
+      name: PYTHON
+      type: string
+    - default: ''
+      description: The additional arguments to be used with pytest
+      name: ARGS
+      type: string
+    - default: .
+      description: The path to the source code
+      name: SOURCE_PATH
+      type: string
+    - default: requirements.txt
+      description: >-
+        The name of the requirements file inside the source location, with
+        fallback to the requirements file in the root location
+      name: REQUIREMENTS_FILE
+      type: string
+  steps:
+    - image: 'docker.io/python:$(inputs.params.PYTHON)'
+      name: unit-test
+      resources: {}
+      script: >
+        export PATH=$PATH:$HOME/.local/bin
+
+        if [ -e
+        "$(inputs.params.SOURCE_PATH)"/"$(inputs.params.REQUIREMENTS_FILE)" ];
+
+        then
+          pip install -r "$(inputs.params.SOURCE_PATH)"/"$(inputs.params.REQUIREMENTS_FILE)"
+          pip show pytest || {
+            printf "###\nWarning: Pytest is missing in your test requirements file\n###";
+            pip install pytest
+          }
+        else
+          if [ -e "$(inputs.params.REQUIREMENTS_FILE)" ];
+          then
+            pip install -r "$(inputs.params.REQUIREMENTS_FILE)"
+          fi
+          pip install pytest
+        fi
+
+        if [ -z "$(inputs.params.ARGS)" ]; then
+          pytest "$(inputs.params.SOURCE_PATH)"
+        else
+          pytest "$(inputs.params.ARGS)" "$(inputs.params.SOURCE_PATH)"
+        fi
+      workingDir: $(workspaces.source.path)
+  workspaces:
+    - name: source
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/pytest_task.yaml
+----
+
+Add the task to the pipeline to run after the first `fetch-repository` task, update the build task to run after `pytest`.
+
+The final pipeline YAML:
+
+[source%nowrap,console]
+----
+$ vi ocp/pipeline-3.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+spec:
+  params:
+    - default: fastapi-quickstart-app
+      name: IMAGE_NAME
+      type: string
+    - default: '1.2'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/walkersblog/fastapi-quickstart-project'
+      name: GIT_REPO
+      type: string
+    - default: main
+      name: GIT_REVISION
+      type: string
+    - default: Hello from Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: pytest
+      params:
+        - name: PYTHON
+          value: latest
+        - name: SOURCE_PATH
+          value: .
+        - name: REQUIREMENTS_FILE
+          value: requirements.txt
+      runAfter:
+        - fetch-repository
+      taskRef:
+        kind: Task
+        name: pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      runAfter:
+        - build
+      params:
+      - name: SCRIPT
+        value: |
+          oc new-app --docker-image image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME):$(params.IMAGE_TAG) -e ENV_STRING="$(params.MESSAGE)"
+    - name: patch
+      params:
+        - name: SCRIPT
+          value: >
+            oc patch svc $(params.IMAGE_NAME) --type merge --patch
+            '{"spec":{"ports":[{"port": 8000, "targetPort": 8000 }]}}'
+      runAfter:
+        - deploy
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+    - name: expose
+      params:
+        - name: SCRIPT
+          value: |
+            oc expose service/$(params.IMAGE_NAME)
+      runAfter:
+        - patch
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+----
+
+You can use `replace` to update via the command line:
+
+[source%nowrap,console]
+----
+$ oc replace -f ocp/pipeline-3.yaml
+----
+
+Start the pipeline:
+
+[source%nowrap,console]
+----
+$ tkn pipeline start s2i-build-and-deploy \
+                     --namespace=ocp-fastapi-quickstart-project \
+                     --param GIT_REPO=https://github.com/walkersblog/fastapi-quickstart-project \
+                     --param IMAGE_NAME=fastapi-quickstart-app \
+                     --workspace name=workspace,claimName=shared-workspace \
+                     --use-param-defaults \
+                     --showlog
+----
+
+image::pipeline-v3.png[pytest Pipeline]
+
+It's still necessary to manually delete the `route`, `service`, and `deployment` before re-running the pipeline, we'll address this using Helm and ArgoCD in the next sections:
+
+[source%nowrap,console]
+----
+$ oc delete route fastapi-quickstart-app
+$ oc delete service fastapi-quickstart-app
+$ oc delete deploy fastapi-quickstart-app
+----
+
+[#custom_s2i]
+== Custom S2I
+
+It wouldn't be complete without one final update to the pipeline, one that uses the custom `s2i-fastapi` image made earlier.
+
+First export the existing `s2i-python` `ClusterTask` and modify it to be a regular `Task` and use our `fastapi-s2i-img` image build earlier:
+
+[source%nowrap,console]
+----
+$ oc get clustertask s2i-python -o yaml > ocp/s2i-fastapi.yaml
+----
+
+[source%nowrap,console]
+----
+$ vi ocp/s2i-fastapi.yaml
+----
+
+Notice the `Kind` and `s2i build` image are updated:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/displayName: s2i fastapi
+    tekton.dev/pipelines.minVersion: "0.19"
+    tekton.dev/tags: s2i, python, workspace
+  labels:
+    app.kubernetes.io/version: "0.1"
+    operator.tekton.dev/provider-type: redhat
+  name: s2i-fastapi
+spec:
+  description: s2i-fastapi task clones a Git repository and builds and pushes a container
+    image using S2I and a Python builder image.
+  params:
+  - default: '1.1'
+    description: The tag of python imagestream for python version
+    name: VERSION
+    type: string
+  - default: .
+    description: The location of the path to run s2i from.
+    name: PATH_CONTEXT
+    type: string
+  - default: "true"
+    description: Verify the TLS on the registry endpoint (for push/pull to a non-TLS
+      registry)
+    name: TLSVERIFY
+    type: string
+  - description: Location of the repo where image has to be pushed
+    name: IMAGE
+    type: string
+  - default: registry.redhat.io/rhel8/buildah@sha256:e19cf23d5f1e0608f5a897f0a50448beb9f8387031cca49c7487ec71bd91c4d3
+    description: The location of the buildah builder image.
+    name: BUILDER_IMAGE
+    type: string
+  results:
+  - description: Digest of the image just built.
+    name: IMAGE_DIGEST
+  steps:
+  - command:
+    - s2i
+    - build
+    - $(params.PATH_CONTEXT)
+    - image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/fastapi-s2i-img:$(params.VERSION)
+    - --as-dockerfile
+    - /gen-source/Dockerfile.gen
+    env:
+    - name: HOME
+      value: /tekton/home
+    image: registry.redhat.io/ocp-tools-4-tech-preview/source-to-image-rhel8@sha256:e518e05a730ae066e371a4bd36a5af9cedc8686fd04bd59648d20ea0a486d7e5
+    name: generate
+    resources: {}
+    volumeMounts:
+    - mountPath: /gen-source
+      name: gen-source
+    workingDir: $(workspaces.source.path)
+  - command:
+    - buildah
+    - bud
+    - --storage-driver=vfs
+    - --tls-verify=$(params.TLSVERIFY)
+    - --layers
+    - -f
+    - /gen-source/Dockerfile.gen
+    - -t
+    - $(params.IMAGE)
+    - .
+    image: $(params.BUILDER_IMAGE)
+    name: build
+    resources: {}
+    volumeMounts:
+    - mountPath: /var/lib/containers
+      name: varlibcontainers
+    - mountPath: /gen-source
+      name: gen-source
+    workingDir: /gen-source
+  - command:
+    - buildah
+    - push
+    - --storage-driver=vfs
+    - --tls-verify=$(params.TLSVERIFY)
+    - --digestfile=$(workspaces.source.path)/image-digest
+    - $(params.IMAGE)
+    - docker://$(params.IMAGE)
+    image: $(params.BUILDER_IMAGE)
+    name: push
+    resources: {}
+    volumeMounts:
+    - mountPath: /var/lib/containers
+      name: varlibcontainers
+    workingDir: $(workspaces.source.path)
+  - image: $(params.BUILDER_IMAGE)
+    name: digest-to-results
+    resources: {}
+    script: cat $(workspaces.source.path)/image-digest | tee /tekton/results/IMAGE_DIGEST
+  volumes:
+  - emptyDir: {}
+    name: varlibcontainers
+  - emptyDir: {}
+    name: gen-source
+  workspaces:
+  - mountPath: /workspace/source
+    name: source
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/s2i-fastapi.yaml
+----
+
+Now update the pipeline once again, replacing the `taskRef` for the `build` stage to `Task` and `s2i-fastapi`:
+
+[source%nowrap,console]
+----
+$ vi ocp/pipeline-4.yaml
+----
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+spec:
+  params:
+    - default: fastapi-quickstart-app
+      name: IMAGE_NAME
+      type: string
+    - default: '1.2'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/walkersblog/fastapi-quickstart-project'
+      name: GIT_REPO
+      type: string
+    - default: main
+      name: GIT_REVISION
+      type: string
+    - default: Hello from Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: pytest
+      params:
+        - name: PYTHON
+          value: latest
+        - name: SOURCE_PATH
+          value: .
+        - name: REQUIREMENTS_FILE
+          value: requirements.txt
+      runAfter:
+        - fetch-repository
+      taskRef:
+        kind: Task
+        name: pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: build
+      taskRef:
+        name: s2i-fastapi
+        kind: Task
+      runAfter:
+        - pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      runAfter:
+        - build
+      params:
+      - name: SCRIPT
+        value: |
+          oc new-app --docker-image image-registry.openshift-image-registry.svc:5000/ocp-fastapi-quickstart-project/$(params.IMAGE_NAME):$(params.IMAGE_TAG) -e ENV_STRING="$(params.MESSAGE)"
+    - name: patch
+      params:
+        - name: SCRIPT
+          value: >
+            oc patch svc $(params.IMAGE_NAME) --type merge --patch
+            '{"spec":{"ports":[{"port": 8000, "targetPort": 8000 }]}}'
+      runAfter:
+        - deploy
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+    - name: expose
+      params:
+        - name: SCRIPT
+          value: |
+            oc expose service/$(params.IMAGE_NAME)
+      runAfter:
+        - patch
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+----
+
+[source%nowrap,console]
+----
+$ oc replace -f ocp/pipeline-4.yaml
+----
+
+Now you have a complete pipeline using a customized S2I image for building FastAPI images a little quicker.
+
+Commit the YAML files to the project:
+
+[source%nowrap,console]
+----
+$ git add .
+$ git commit -m "added pipeline yaml"
+$ git push
+----
+
+And clean up:
+
+[source%nowrap,console]
+----
+$ oc delete route fastapi-quickstart-app
+$ oc delete service fastapi-quickstart-app
+$ oc delete deploy fastapi-quickstart-app
+----
+
+
+// This is a comment and won't be rendered.

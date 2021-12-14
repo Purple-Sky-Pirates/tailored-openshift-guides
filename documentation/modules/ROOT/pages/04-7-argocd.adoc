@@ -1,0 +1,204 @@
+= ArgoCD
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction
+
+ArgoCD is akin to Terraform or Puppet, in that it provides declarative approach to enforcing the state of OpenShift deployments. It works best with helm charts, and this section will demonstrate how to use ArgoCD to monitor any changes in the helm chart added to the FastAPI project in this guide, and enforce the state of the deployment automatically.
+
+Install the Red Hat OpenShift GitOps operator from Operator Hub.
+
+Download and install the `argocd` cli tool:
+
+[source%nowrap,console]
+----
+$ wget https://github.com/argoproj/argo-cd/releases/download/v2.0.0/argocd-linux-amd64
+----
+
+[source%nowrap,console]
+----
+$ mv argocd-linux-amd64 /usr/local/bin/argocd
+----
+
+[source%nowrap,console]
+----
+$ chmod +x /usr/local/bin/argocd
+----
+
+[source%nowrap,console]
+----
+$ argocd version
+argocd: v2.1.6+a346cf9
+  BuildDate: 2021-10-28T19:59:40Z
+  GitCommit: a346cf933e10d872eae26bff8e58c5e7ac40db25
+  GitTreeState: clean
+  GoVersion: go1.16.5
+  Compiler: gc
+  Platform: linux/amd64
+----
+
+To obtain the ArgoCD admin password and URL login as a cluster admin and grant `admin` to the user `developer` on namespace `openshift-gitops`:
+
+[source%nowrap,console]
+----
+$ oc adm policy add-role-to-user admin developer -n openshift-gitops
+----
+
+Then log back in as `developer` and the following should work:
+
+[source%nowrap,console]
+----
+$ argoPass=$(oc get secret openshift-gitops-cluster -n openshift-gitops -o jsonpath='{.data.admin\.password}' | base64 -d)
+$ argoURL=$(oc get route -n openshift-gitops openshift-gitops-server -o jsonpath='{.spec.host}')
+----
+
+So now you can login to ArgoCD:
+
+[source%nowrap,console]
+----
+$ argocd login --insecure --grpc-web $argoURL --username admin --password $argoPass
+----
+
+[#fastapi]
+== FastAPI Example
+
+This, can of course all be done via the ArgoCD web console but here the CLI examples are documented.
+
+The following example uses a branch called `argocd` and includes a namespace template in the Helm Chart. This demonstrates how a whole project can be provisioned and de-provisioned using Helm under the management of ArgoCD.
+
+=== Create ArgoCD Project
+
+Create a new ArgoCD project:
+
+[source%nowrap,console]
+----
+$ argocd proj create argocd-fastapi-quickstart-project --dest '*,*' --src '*' --allow-cluster-resource '*/*'
+----
+
+List projects with:
+
+[source%nowrap,console]
+----
+$ argocd proj list
+----
+
+Delete projects with:
+
+[source%nowrap,console]
+----
+$ argocd proj delete argocd-fastapi-quickstart-project
+----
+
+=== Add Repo
+
+Add/connect a repository using HTTPS:
+
+[source%nowrap,console]
+----
+$ argocd repo add https://github.com/walkersblog/fastapi-quickstart-project.git
+----
+
+List repositories:
+
+[source%nowrap,console]
+----
+$ argocd repo list
+----
+
+Delete repoosiroty with
+
+[source%nowrap,console]
+----
+$ argocd repo rm https://github.com/walkersblog/fastapi-quickstart-project.git
+----
+
+=== Create App
+
+Create a new app from the command line, including the Git repository, Git branch (revision), path to helm chart within the repo, OpenShift namespace (if defined, needs to match as defined `values.yaml` in Helm), destination server (left as the default, project (added in ArgoCD), and the synchronization policy. )
+
+[source%nowrap,text]
+----
+$ argocd app create fastapi-quickstart-app \
+                    --repo https://github.com/walkersblog/fastapi-quickstart-project.git \
+                    --revision main \
+                    --path helm \
+                    --dest-namespace ocp-fastapi-quickstart-project \
+                    --dest-server https://kubernetes.default.svc \
+                    --project argocd-fastapi-quickstart-project \
+                    --sync-policy auto
+----
+
+List apps with:
+
+[source%nowrap,console]
+----
+$ argocd app list
+----
+
+Delete apps with:
+
+[source%nowrap,console]
+----
+$ argocd app delete fastapi-example
+----
+
+[#policy]
+=== Policy Workaround
+
+IMPORTANT: Namespace fix required for any project to be managed by `openshift-gitops-argocd-application-controller`
+
+Typical example error seen in ArgoCD:
+
+[source%nowrap,text]
+----
+deployments.apps is forbidden: User "system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller" cannot create resource "deployments" in API group "apps" in the namespace "ocp-fastapi-quickstart-project"
+----
+
+Example Fix (i.e. change the project namespace to your project):
+
+[source%nowrap,console]
+----
+$ oc adm policy add-role-to-user admin system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller -n ocp-fastapi-quickstart-project
+----
+
+[#sync]
+=== App Sync
+
+ArgoCD will automatically synchronize any changes made in the underlying git repository, but to manual trigger a sync on-demand:
+
+[source%nowrap,console]
+----
+$ argocd app sync fastapi-quickstart-app
+----
+
+Try updating the number of replicas, commit and push the change to git and either wait or cause a app sync to occur:
+
+[source%nowrap,console]
+----
+$ vi helm/templates/deployment.yaml
+----
+
+[source%nowrap,yaml]
+----
+spec:
+  replicas: 2
+----
+
+[source%nowrap,yaml]
+----
+$ git commit -am "incremented replicas"
+$ git push
+----
+
+[source%nowrap,console]
+----
+$ argocd app sync fastapi-quickstart-app
+----
+
+Here is the final app running in Argocd with two pods running:
+
+image::argocd-two-pods.png[Argo CD,align="center"]
+
+That's fundamentally all ArgoCD does, enforce a helm chart automatically.
+
+// This is a comment and won't be rendered.
