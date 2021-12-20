@@ -1,0 +1,7 @@
+= Patterns
+
+This section describes some of the common patterns that you may consider using when moving your applications to a PaaS like OpenShift.
+
+- xref:patterns-breakup.adoc[]
+
+
