@@ -1,0 +1,32 @@
+= Networking
+
+In EKS, you can route traffic to your application by creating a _Service_ or an _Ingress_. This creates an _AWS Application Load Balancer (ALB)_. 
+
+To migrate to OpenShift, it's generally preferred to change to `Route` resources, which offer a little more control.
+
+== Prefer Routes for inbound traffic
+
+In OpenShift, the resource which exposes a `Service` outside the cluster is called a `Route`. 
+
+A Route exposes your Kubernetes _Service_ to the outside world via a proxy server which is present in the cluster. A Route also adds TLS encryption (HTTPS) automatically.
+
+.Routes in OpenShift
+image::eks-routes.png[Routes in OpenShift,650,align="center"]
+
+The _Route_ object looks like this:
+
+```yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: my-app
+spec:
+  to:
+    kind: Service
+    name: my-app
+    weight: 100
+```
+
+You don't need to specify a hostname when the Route is created. OpenShift will automatically assign a URL based on the cluster suffix (e.g. `*.apps.example.org`), the Project, and the name of the Route.
+
+NOTE: It's technically possible in some OpenShift environments to expose your application by creating a _Service_ of type `LoadBalancer`, but creating a _Route_ is the recommended option as it offers way more control.

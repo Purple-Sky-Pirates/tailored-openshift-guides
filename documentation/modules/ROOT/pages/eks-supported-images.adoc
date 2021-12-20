@@ -1,0 +1,130 @@
+= Container images
+
+When running a different distribution of Kubernetes, you might be able to use any images you like.
+
+However OpenShift comes with some supported images which you can use in your applications. This page gives some considerations for which images to use when running on OpenShift.
+
+== Prefer supported base images
+
+OpenShift comes with a bunch of base images which you can use to build container images for your applications. The images are supported by Red Hat and patched regularly.
+
+The images start with a supported operating system (RHEL), and add certified libraries and runtime environments, ready for you to add your code on top.
+
+This means that you shouldn't need to build your own base images (from scratch) for your applications.
+
+.Using a supported base image
+image::eks-base-image.png[Supported base image for applications,align="center"]
+
+The general approach with the supported images is to use them as a _"base"_ or _"parent" image_ for your application, as part of:
+
+- A Docker build, or
+
+- A Source-to-Image (S2I) build
+
+=== Finding images
+
+Images are available for most mainstream languages, including:
+
+- Ruby
+
+- Java
+
+- Python
+
+- Node.js
+
+Images are usually made available as _Image Streams_. An Image Stream is an OpenShift object that points to a container image. Image Streams are used mainly to share images across the cluster, and can be used as triggers for builds and deployments.
+
+.Using an ImageStream from the "openshift" Project
+image::eks-building-image.png[Using an ImageStream from the "openshift" Project,align="center"]
+
+To search for image streams already installed into the cluster, you can use `oc new-app --search`:
+
+----
+$ oc new-app --search java 
+-----
+java
+  Project: openshift
+  Tags:    latest, openjdk-11-el7, openjdk-11-ubi8, openjdk-8-el7, openjdk-8-ubi8
+----
+
+This tells us that there is a `java` image stream in the `openshift` namespace, with tags `latest`, `openjdk-11-el7`, etc.
+
+To find all of the base images available and find out more, see link:https://access.redhat.com/documentation/en-us/red_hat_software_collections/3/html/using_red_hat_software_collections_container_images[Using Red Hat Software Collections Container Images].
+
+=== Example
+
+For example, to use the supported OpenJDK base image for a Java application, create an _ImageStream_ for your application:
+
+[source,yaml]
+----
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: java-sample
+  labels:
+    application: java-sample
+----
+
+Then create a _BuildConfig_ similar to this. This references the `java` image stream in the `openshift` namespace:
+
+[source,yaml]
+----
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: java-sample
+  labels:
+    application: java-sample
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jboss-openshift/openshift-quickstarts
+    contextDir: undertow-servlet
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: ImageStreamTag
+        namespace: openshift
+        name: java:openjdk-11-el7
+  output:
+    to:
+      kind: ImageStreamTag
+      name: java-sample:latest
+----
+
+NOTE: If the `java` image isn't installed, you can install it manually 
+
+link:https://docs.openshift.com/container-platform/4.9/openshift_images/using_images/using-s21-images.html[Find out more about Source-to-Image in the OpenShift documentation].
+
+== Prefer supported Linux
+
+If you need to develop directly against Linux, you can also use a supported Linux image which is based on Red Hat Enterprise Linux (RHEL).
+
+The supported image is called the Red Hat Universal Base Image (UBI), and you can find out more about it here:
+
+- https://developers.redhat.com/products/rhel/ubi
+
+- https://access.redhat.com/articles/4238681
+
+Like the application/S2I images, this UBI image is patched regularly.
+
+== Prefer supported third-party applications
+
+OpenShift also comes with supported images for some third-party applications, like databases.
+
+For example:
+
+- MySQL
+
+- PostgreSQL
+
+- Redis
+
+You can find templates to deploy these applications in the OpenShift web console. 
+
+For more information about the images available, see: link:https://access.redhat.com/documentation/en-us/red_hat_software_collections/3/html/using_red_hat_software_collections_container_images[Using Red Hat Software Collections Container Images].
+
+
