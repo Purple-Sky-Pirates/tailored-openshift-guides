@@ -1,0 +1,25 @@
+= Migrating from vanilla Kubernetes or EKS
+
+If you've already got an application running on **Amazon's Elastic Kubernetes Service (EKS)** that you want to migrate to OpenShift, great! You're already most of the way to cloud-native.
+
+**OpenShift is a _distribution_ of Kubernetes.** It includes Kubernetes, and extends it. OpenShift supports most standard Kubernetes APIs, and the `oc` command-line tool is almost identical to the familiar `kubectl` from Kubernetes.
+
+Perhaps the most immediate notable difference is that OpenShift also provides a web console which you can use for deploying and inspecting apps on the platform.
+
+But, there are a few more differences that you need to consider. Here's a typical Kubernetes application:
+
+.Typical application architecture on EKS
+image::eks-migration-eks.png[Typical Kubernetes application on EKS,650,align="center"]
+
+While OpenShift will happily run most applications which have been designed for Kubernetes, there are still some differences to be aware of.
+
+So if you're bringing your own application from EKS to OpenShift, here are some of the main areas that you should think about:
+
+- xref:eks-security.adoc[]
+
+- xref:eks-supported-images.adoc[]
+
+- xref:eks-networking.adoc[]
+
+
+

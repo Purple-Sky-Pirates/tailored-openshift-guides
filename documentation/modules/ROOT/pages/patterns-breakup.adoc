@@ -1,0 +1,116 @@
+= Break Up Monolith pattern
+
+The Break-up Monolith pattern is one way to move legacy applications piece-by-piece onto a cloud platform like OpenShift.
+
+When you move your application to a cloud platform in stages, you can get the benefits of both a monolithic application _and_ the scalability of containers.
+
+You might want to consider this pattern if:
+
+- You have an existing legacy application which would be difficult to migrate
+
+- There is a component inside the application which is often a bottleneck
+
+The ideal component to separate out from your application and onto OpenShift should have a clearly defined interface, so it can be more easily broken apart.
+
+This pattern describes how you could break apart a monolithic application and deploy a part of it onto OpenShift.
+
+== The pattern
+
+This example architecture shows a monolithic application, which processes some orders. It's deployed as a single unit (e.g. a Java WAR file) onto an application server, which is running on a virtual machine.
+
+.Example monolithic Order Management application
+image::bum-arch.png[Order Management application,650,align="center"]
+
+The flow in the application looks like this:
+
+. The application receives an order and sends the order to a message queue.
+
+. The order processing component receives the message and processes the order.
+
+. The order processing component sends an update message to say that the order has been processed.
+
+. The receive order component receives the update message and continues processing.
+
+How could this unwieldy, monolithic application be deployed onto OpenShift? By extracting some of the functionality using the Break-Up Monolith pattern.
+
+.Order Management application part-migrated to containers
+image::bum-to-be.png[Order Management application with break-up,align="center"]
+
+In this "to-be" architecture, the resource-intensive component has been moved into its own application and containerised. It's now running on OpenShift, and reading messages from the same message broker as before. But the flow is now slightly different:
+
+. The application sends the order to a message queue.
+
+. **One of the order processing Pods (in OpenShift)** receives the message. There could be just 1 Pod running, or more as required.
+
+. The order processing Pod sends an update message to say that the order has been processed.
+
+. The receive order component receives the update message and continues processing.
+
+The difference here is that, while the microservice is still performing the same business logic, it is now deployed in a way that it can be scaled independently of the main application. 
+
+== How to do it
+
+To implement this pattern, you need to:
+
+- **Identify a candidate component in your application.** This is a part of your application which you would like to extract and scale -- e.g. an Order Processing component, or a Shipping component, or a Customer Lookup component.
+
+- **Move the code into a new project.** You can keep the code in the same framework, refactor it into a new one, or rewrite it into a new language entirely.
+
+- **Build a container image for the new application.** In OpenShift (PaaS), you can build a container image for an application written in any of the popular languages, like Java, JavaScript and Python. OpenShift's Source-to-Image and Docker build features will help you build your image. link:https://docs.openshift.com/container-platform/4.9/applications/creating_applications/odc-creating-applications-using-developer-perspective.html[Read more about creating applications.]
+
+- **Deploy the image onto OpenShift.** You deploy your image onto OpenShift by creating objects like a DeploymentConfig, Services and a Route. link:https://docs.openshift.com/container-platform/4.9/architecture/understanding-development.html[Read more about developing for OpenShift.]
+
+== Benefits
+
+Separating an application in this way offers a couple of benefits:
+
+- **It can be scaled at times of peak load.** For example, in OpenShift you can use the link:https://docs.openshift.com/container-platform/4.9/nodes/pods/nodes-pods-autoscaling.html[HorizontalPodAutoscaler] feature to bump up the number of Pods of your application when it uses greater memory or CPU. 
+
+- **It can be scaled based on an external factor.** The KEDA (Kubernetes Event-Driven Autoscaling) project lets you scale Pods based on an external factor, like the number of messages waiting on a message queue. This is incredibly useful for applications which need to scale based on workload.
+
+- **It can be developed and deployed independently of the main application.** This is another useful benefit. By separating out the microservice from the main application, it can be maintained separately. However do be aware that the main application and its broken-off microservice will need to share data, and so the APIs for your objects need to be carefully managed.
+
+== Further reading
+
+More resources to explore:
+
+- link:https://keda.sh/[KEDA - Kubernetes Event-Driven Autoscaling]
+
+== Example: Deploying a new JBoss/Wildfly application
+
+Once you have created a new JBoss/Wildfly application which contains your microservice, you can follow these high-level steps to deploy your application onto OpenShift.
+
+=== Install EAP images
+
+To build and deploy your JBoss EAP application to OpenShift, you should use one of the supported Red Hat base images for JBoss EAP. Then, when your application builds, it will be layered on top of the existing supported installation of EAP.
+
+If the EAP images are not already installed into your cluster, you can install them using this command (e.g. for EAP 7.4):
+
+[.console-input]
+[source,bash]
+----
+oc apply -f https://raw.githubusercontent.com/jboss-container-images/jboss-eap-openshift-templates/eap74/eap74-openjdk8-image-stream.json
+----
+
+=== Build and deploy the application
+
+The next step to deploy your application is to create some objects inside your OpenShift project. These objects will describe your application and how you want it to be deployed in OpenShift. The important objects you'll need are:
+
+- A BuildConfig, to build a container image from the source code
+
+- An ImageStream, to reference the container image
+
+- A DeploymentConfig, to deploy the application
+
+- Services, to route network traffic to your application
+
+- A Route, to expose the application outside the cluster (if your application has a front-end or web UI)
+
+It's usually easier to create these objects by using a _Template_. A Template in OpenShift describes a set of objects that can be parameterized and processed to produce a list of objects for creation by OpenShift. There are a few templates provided for JBoss EAP, see:
+
+https://github.com/jboss-container-images/jboss-eap-openshift-templates/tree/eap74/templates
+
+A Template creates objects which can be exported from the cluster as JSON or YAML, and then committed into your Git repository so you can version-control them.
+
+
+

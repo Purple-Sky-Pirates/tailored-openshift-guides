@@ -1,0 +1,127 @@
+= Security
+
+Security is probably the biggest change that you will notice when trying to deploy your Kubernetes application on OpenShift.
+
+OpenShift has various security features which can affect how your application runs.
+
+For example, you might want to deploy a containerised application which expects to run as `root`. This is usually possible in EKS, but can present some challenges in OpenShift!
+
+Read on to find out some security considerations when moving your application to OpenShift.
+
+
+== You can't deploy to the `default` namespace
+
+OpenShift is a platform-as-a-service (PaaS) shared by many users. So you won't have access to the _default_ namespace which you perhaps would in another Kubernetes distribution.
+
+In OpenShift, _Projects_ are a way to segregate applications. They work like Namespaces in Kubernetes. (In fact, a Project creates a Namespace behind the scenes.)
+
+If your Kubernetes manifests reference `namespace: default` then make sure you replace this with the Project which you are deploying to. Or, you can leave the `namespace:` field blank altogether and `oc` will deploy to the Project you're currently in.
+
+This also means that any internal cluster URLs which use `default` - e.g. `http://myapp.default.svc.cluster.local` will need to be updated.
+
+
+== Writable files and directories should be owned by the root group
+
+If your application needs to write files inside the container, you should follow these guidelines:
+
+> For an image to support running as an arbitrary user, directories and files that may be written to by processes in the image should be **owned by the root group and be read/writable by that group**.
+
+If you need to write to files inside the container, then make sure the _root_ group has write permissions on them.
+
+For example, you could add some instructions to your _Dockerfile_ (if you're using one) to change the group ownership to `root` on the files/directories that need to be writeable by the application:
+
+[source,dockerfile]
+----
+RUN chgrp -R root /opt/myapp/data
+RUN chmod -R 664 /opt/myapp/data
+----
+
+== Containers shouldn't run as root
+
+OpenShift runs containers as an arbitrary user ID. It will not run containers as _root_ by default. This can pose problems if your application expects to have root access -- for example, if you need to write files in certain locations, or listen on certain network ports.
+
+=== Common reasons for running as root
+
+Applications might expect to run with elevated privileges because they try to do things like the following:
+
+- Run network services on privileged ports
+
+- Write files in certain root-only locations, like `/etc` or `/usr`
+
+- Start or stop services inside the container
+
+=== Alternatives to root
+
+If your application seems to require root access, try one of the following solutions:
+
+**Bind only to unprivileged ports:** If your application runs a network service, like a web server, database or message broker, then use non-privileged ports. For example, use port 8080 instead of 80.
+
+In Linux, port numbers below 1024 are considered 'privileged', and non-root users are not allowed to run servers on them.
+
+TIP: The link:https://hub.docker.com/_/nginx[the official Nginx image] on Docker Hub runs on port 80, which is a privileged port. However the link:https://catalog.redhat.com/software/containers/search?q=nginx&p=1&vendor_name=Red%20Hat[Red Hat supported Nginx images] run on a higher, non-privileged port, which plays nicer with the `restricted` SCC.
+
+**Write files to non-privileged locations:** If your application is storing writable files in traditionally sensitive locations inside the container, e.g. `/etc/`, then consider moving them to another, non-privileged location, and ensure that you set group ownership correctly.
+
+=== Why root will fail
+
+OpenShift has a feature called _Security Context Constraints_ (SCC). An SCC is a set of permissions which is applied to the _Service Account_ that runs your Pods.
+
+There are a few built-in SCCs in OpenShift. Pods inherit the `restricted` SCC by default. One of the characteristics of `restricted` is to _"ensure that pods cannot run as privileged"_. This means that if your app relies on running as `root`, it might fail.
+
+- See link:https://docs.openshift.com/container-platform/4.9/authentication/managing-security-context-constraints.html[the official documentation pages on Managing Security Context Constraints]
+
+- For a deep-dive into SCCs, see the blog post link:https://cloud.redhat.com/blog/managing-sccs-in-openshift[Managing SCCs in OpenShift].
+
+=== When you really need root
+
+You can run applications as root by granting a Service Account the relevant Security Context Constraint (SCC), but this requires permission from your cluster administrator.
+
+To run a Pod as root:
+
+- Create a named _Service Account_
+
+- Grant the `anyuid` SCC to the _Service Account_.
+
+- Modify your _Deployment_ or _DeploymentConfig_ to use the new Service Account.
+
+== Appendix
+
+=== Scenario: When write permissions fail
+
+This is the output when trying to run a Ruby application in a container which expects to have write access in a directory:
+
+----
+Tasks: TOP => assets:precompile
+(See full trace by running task with --trace)
++ exec rails s -e production -b 0.0.0.0
+/opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:232:in `mkdir': Permission denied @ dir_s_mkdir - /usr/src/app/tmp (Errno::EACCES)
+	from /opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:232:in `fu_mkdir'
+	from /opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:210:in `block (2 levels) in mkdir_p'
+	from /opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:208:in `reverse_each'
+	from /opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:208:in `block in mkdir_p'
+	from /opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:193:in `each'
+	from /opt/bitnami/ruby/lib/ruby/2.5.0/fileutils.rb:193:in `mkdir_p'
+----
+
+This error is happening because the application inside the container expects to write to `/usr/src/app/tmp`.
+
+We can look at the permissions on that directory using `ls -ld /usr/src/app`:
+
+----
+# ls -ld /usr/src/app
+drwxr-xr-x. 14 root root 4096 Mar 26  2021 /usr/src/app
+----
+
+This shows that the _root_ group doesn't have write permissions on this directory. So write operations in the container will fail!
+
+One solution is to extend the Docker image and add another command to set the necessary permissions:
+
+[source,dockerfile]
+----
+FROM myteam/myapp:latest
+RUN chmod g+w /usr/src/app
+----
+
+Now the container will have the correct permissions to write inside that directory.
+
+You can run a Docker build in a `BuildConfig` inside OpenShift, or add it to your existing build process.

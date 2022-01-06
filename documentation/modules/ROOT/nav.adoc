@@ -123,3 +123,11 @@
 *** xref:petclinic-backend.adoc#verify_application[Exercise: Verify App]
 
 * xref:migration-manifests.adoc[Migrating Manifests]
+
+* xref:eks-migration.adoc[]
+** xref:eks-security.adoc[]
+** xref:eks-supported-images.adoc[]
+** xref:eks-networking.adoc[]
+
+* xref:patterns.adoc[]
+** xref:patterns-breakup.adoc[]

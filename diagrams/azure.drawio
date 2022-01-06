@@ -1,0 +1,125 @@
+<mxfile host="65bd71144e">
+    <diagram id="WRi_deqX8M1kwbgPSFmU" name="Page-1">
+        <mxGraphModel dx="796" dy="430" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="4" value="" style="edgeStyle=entityRelationEdgeStyle;html=1;" edge="1" parent="1" source="2" target="3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="12" style="edgeStyle=entityRelationEdgeStyle;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="2" target="11">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="17" style="edgeStyle=entityRelationEdgeStyle;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="2" target="16">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="Active Directory Tenant&lt;br&gt;(e.g. &quot;mnx2&quot;)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#60a917;strokeColor=#2D7600;fontColor=#ffffff;" vertex="1" parent="1">
+                    <mxGeometry x="20" y="180" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="6" value="" style="edgeStyle=none;html=1;" edge="1" parent="1" source="3" target="5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="App registration: &quot;rhssotest&quot;" style="whiteSpace=wrap;html=1;rounded=0;fontColor=#ffffff;strokeColor=#A50040;fillColor=#d80073;" vertex="1" parent="1">
+                    <mxGeometry x="240" y="140" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="8" style="edgeStyle=entityRelationEdgeStyle;html=1;endArrow=none;endFill=0;" edge="1" parent="1" source="5" target="7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" style="edgeStyle=entityRelationEdgeStyle;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="5" target="50">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="App roles" style="whiteSpace=wrap;html=1;rounded=0;fontColor=#ffffff;strokeColor=#006EAF;fillColor=#1ba1e2;" vertex="1" parent="1">
+                    <mxGeometry x="460" y="140" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="&quot;Uncle Albert Role&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+                    <mxGeometry x="660" y="160" width="120" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="15" style="edgeStyle=entityRelationEdgeStyle;html=1;" edge="1" parent="1" source="11" target="14">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="Users" style="whiteSpace=wrap;html=1;rounded=0;fontColor=#000000;strokeColor=#BD7000;fillColor=#f0a30a;" vertex="1" parent="1">
+                    <mxGeometry x="240" y="280" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="23" style="edgeStyle=entityRelationEdgeStyle;html=1;entryX=0.025;entryY=0.192;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;" edge="1" parent="1" source="14" target="18">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="24" value="is a member of" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontStyle=2" vertex="1" connectable="0" parent="23">
+                    <mxGeometry x="-0.0827" y="2" relative="1" as="geometry">
+                        <mxPoint x="9" y="7" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="14" value="&lt;font color=&quot;#ffffff&quot; style=&quot;background-color: rgb(0 , 0 , 0)&quot;&gt;Adele&lt;/font&gt;" style="html=1;verticalLabelPosition=bottom;align=center;labelBackgroundColor=#ffffff;verticalAlign=top;strokeWidth=2;strokeColor=#0080F0;shadow=0;dashed=0;shape=mxgraph.ios7.icons.user;" vertex="1" parent="1">
+                    <mxGeometry x="400" y="295" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="19" style="edgeStyle=entityRelationEdgeStyle;html=1;" edge="1" parent="1" source="16" target="18">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="16" value="Groups" style="whiteSpace=wrap;html=1;rounded=0;fontColor=#000000;strokeColor=#BD7000;fillColor=#CF8C09;" vertex="1" parent="1">
+                    <mxGeometry x="240" y="350" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="20" style="edgeStyle=entityRelationEdgeStyle;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1;" edge="1" parent="1" source="18" target="53">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="21" value="is Assigned" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontStyle=2" vertex="1" connectable="0" parent="20">
+                    <mxGeometry x="-0.259" y="2" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="18" value="My App Test" style="pointerEvents=1;shadow=0;dashed=0;html=1;strokeColor=none;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;align=center;fillColor=#505050;shape=mxgraph.mscae.intune.user_group" vertex="1" parent="1">
+                    <mxGeometry x="510" y="361.5" width="50" height="37" as="geometry"/>
+                </mxCell>
+                <mxCell id="26" style="html=1;fontSize=9;" edge="1" parent="1" source="25" target="5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="25" value="&quot;App roles are custom roles to assign permissions to users or apps. The application defines and publishes the app roles and interprets them as permissions during authorization.&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2" vertex="1" parent="1">
+                    <mxGeometry x="410" y="20" width="156" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="27" value="https://docs.microsoft.com/en-us/azure/active-directory/develop/howto-add-app-roles-in-azure-ad-apps" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;" vertex="1" parent="1">
+                    <mxGeometry x="26" y="450" width="540" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" value="&quot;Represents a Service, App or API&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2" vertex="1" parent="1">
+                    <mxGeometry x="204" y="40" width="156" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="29" style="html=1;fontSize=9;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="28" target="3">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="507.73913043478274" y="100" as="sourcePoint"/>
+                        <mxPoint x="521.6521739130435" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="30" value="The value of the roles claim &quot;should exactly match the string referenced in the application's code&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2" vertex="1" parent="1">
+                    <mxGeometry x="690" y="285" width="156" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="31" style="html=1;fontSize=9;entryX=0.593;entryY=1.041;entryDx=0;entryDy=0;entryPerimeter=0;" edge="1" parent="1" source="30" target="53">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="760" y="300" as="sourcePoint"/>
+                        <mxPoint x="521.6521739130435" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="49" value="" style="shape=table;startSize=0;container=1;collapsible=0;childLayout=tableLayout;fontSize=9;" vertex="1" parent="1">
+                    <mxGeometry x="660" y="190" width="230" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="50" value="" style="shape=partialRectangle;collapsible=0;dropTarget=0;pointerEvents=0;fillColor=none;top=0;left=0;bottom=0;right=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" vertex="1" parent="49">
+                    <mxGeometry width="230" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="51" value="&lt;b&gt;Display name&lt;/b&gt;" style="shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;" vertex="1" parent="50">
+                    <mxGeometry width="90" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="52" value="Lovely Jubbly Role" style="shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;" vertex="1" parent="50">
+                    <mxGeometry x="90" width="140" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="53" value="" style="shape=partialRectangle;collapsible=0;dropTarget=0;pointerEvents=0;fillColor=none;top=0;left=0;bottom=0;right=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;" vertex="1" parent="49">
+                    <mxGeometry y="25" width="230" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="54" value="&lt;b&gt;Value&lt;/b&gt;" style="shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;" vertex="1" parent="53">
+                    <mxGeometry width="90" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="55" value="lovelyjubbly" style="shape=partialRectangle;html=1;whiteSpace=wrap;connectable=0;overflow=hidden;fillColor=none;top=0;left=0;bottom=0;right=0;pointerEvents=1;" vertex="1" parent="53">
+                    <mxGeometry x="90" width="140" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="56" value="&quot;In general, app roles are the recommended solution.&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontStyle=2" vertex="1" parent="1">
+                    <mxGeometry x="580" y="30" width="156" height="30" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
