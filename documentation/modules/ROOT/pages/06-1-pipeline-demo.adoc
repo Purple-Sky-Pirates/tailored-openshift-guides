@@ -1,0 +1,1034 @@
+= OpenShift Pipeline Demo
+include::_attributes.adoc[]
+
+[#demo_intro]
+== Introduction 
+
+This section documents the taken in the Red Hat OpenShift Pipelines demonstration, delivered Q1 2022.
+
+[#demo_git]
+== Git Branches 
+
+Two git branches where created to manage helm chart values per different OpenShift demonstration projects. For example, there is the default `main` branch, and two additional branches `demo-one` and `demo-two`. 
+
+The key file that differs is `helm/values.yaml`, which will be the file that gets modified to increment the tag number for ArgoCD to register and deploy updated application images during pipeline runs. 
+
+[source%nowrap,console]
+----
+remotes/origin/demo-one
+remotes/origin/demo-two
+remotes/origin/main
+----
+
+[#demo_workspaces]
+== Pipeline Workspaces
+
+The OpenShift lab used for demonstration is a "Single Node Cluster", and while **NOT** recommended in real environments, NFS storage is used as the primary storage class to provide persistent volumes.
+
+One the NFS server, shares are created on the filesystem. For information, and to avoid permission issues with containers on OpenShift failing to write, the following was applied. For example:
+
+[source%nowrap,console]
+----
+$ chmod 777 /home/shares/ocp/demo-one
+$ setfacl -Rdm g:1001:rwx /home/shares/ocp/demo-one
+----
+
+As a cluster administrator a persistent volumes is added, for example:
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: demo-one-ws-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteMany
+  nfs:
+    path: /home/shares/ocp/demo-one
+    server: 192.168.1.100
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+----
+
+[#demo_ssh_workspace]
+== SSH Workspace
+
+Additionally, when using the Cluster Task `git-cli`, the task requires credentials to commit changes. This is done using an SSH key pair, that needs to be mounted to the `git-cli` container at runtime. The SSH workspace is a persistent volume/persistent volume claim that already contains the key pair, ready for usage. 
+
+For example, as mentioned in the previous section, in this lab environment an NFS share was created and a persistent volume added as a cluster administrator, and using `ssh-keygen` and key pair exists in the shared directory.
+
+[source%nowrap,console]
+----
+$ cd /home/shares/ocp/demo-one-ssh-creds
+$ ssh-keygen -f pipeline
+$ ls -al /home/shares/ocp/demo-one-ssh-creds
+total 12
+-rw-------+ 1 1001 1001 2610 Jan 13 16:43 pipeline
+-rw-r--r--+ 1 1001 1001  575 Jan 13 16:43 pipeline.pub
+----
+
+NOTE: The public SSH key needs to be added to the GitHub account.
+
+Once the NFS share is exports and made available, as a cluster administrator a persistent volume is added:
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: demo-one-ssh-ws-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteMany
+  nfs:
+    path: /home/shares/ocp/demo-one-ssh-creds
+    server: 192.168.1.100
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+----
+
+The cluster should have the following persistent volumes ready to be claimed:
+
+[source%nowrap,console]
+----
+$ oc get pv
+NAME                  CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS
+demo-one-ssh-ws-pv    1Gi        RWX            Retain           Available           nfs           
+demo-one-ws-pv        1Gi        RWX            Retain           Available           nfs          
+----
+
+[#demo_version1]
+== Pipeline V1 - openshift-client
+
+Create new project:
+
+[source%nowrap,console]
+----
+oc new-project demo-one
+oc project demo-one
+----
+
+Create persistent volume claim:
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-workspace
+  namespace: demo-one
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs
+----
+
+[source%nowrap,console]
+----
+$ oc create -f workspace-pvc.yaml
+----
+
+[source%nowrap,console]
+----
+$ oc get pvc
+NAME             STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+demo-workspace   Pending                                      nfs            26m
+----
+
+Create the first version of the pipeline, which includes stages using Cluster Tasks:
+
+* Fetch Repository (`git-clone`)
+* Build (`s2i-python`)
+* Deploy (`openshift-client`)
+* Patch (`openshift-client`)
+* Expose (`openshift-client`)
+
+Create pipeline:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-deploy
+spec:
+  params:
+    - default: demo-one
+      name: PROJECT_NAMESPACE
+      type: string
+    - default: fastapi-demo-one
+      name: IMAGE_NAME
+      type: string
+    - default: '1.0'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/rwalker-redhat/fastapi-quickstart-project.git'
+      name: GIT_REPO
+      type: string
+    - default: demo-one
+      name: GIT_REVISION
+      type: string
+    - default: Hello from demo one Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/$(params.PROJECT_NAMESPACE)/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      runAfter:
+        - build
+      params:
+      - name: SCRIPT
+        value: |
+          oc new-app --docker-image image-registry.openshift-image-registry.svc:5000/$(params.PROJECT_NAMESPACE)/$(params.IMAGE_NAME):$(params.IMAGE_TAG) -e ENV_STRING="$(params.MESSAGE)"
+    - name: patch
+      params:
+        - name: SCRIPT
+          value: >
+            oc patch svc $(params.IMAGE_NAME) --type merge --patch
+            '{"spec":{"ports":[{"port": 8000, "targetPort": 8000 }]}}'
+      runAfter:
+        - deploy
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+    - name: expose
+      params:
+        - name: SCRIPT
+          value: |
+            oc expose service/$(params.IMAGE_NAME)
+      runAfter:
+        - patch
+      taskRef:
+        kind: ClusterTask
+        name: openshift-client
+----
+
+Run the pipeline:
+
+image::demo-one-start.png[Start Pipeline]
+
+Confirm the persistent volume claim has been claimed by running the pipeline:
+
+[source%nowrap,yaml]
+----
+$ oc get pvc
+NAME             STATUS   VOLUME           CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+demo-workspace   Bound    demo-one-ws-pv   1Gi        RWX            nfs            32m
+----
+
+image::demo-one-run.png[Start Pipeline]
+
+[#demo_version2]
+== Pipeline V2 - ArgoCD 
+
+This second pipeline replaces the `deploy`, `patch` and `expose` stages with an ArgoCD synchronise, handing off to ArgoCD using a Helm Chart to manage the state of the deployment. 
+
+Remove the deployment from previous pipeline:
+
+[source%nowrap,console]
+----
+$ oc delete route fastapi-demo-one
+$ oc delete svc fastapi-demo-one
+$ oc delete deploy fastapi-demo-one
+----
+
+=== ArgoCD
+
+These are the steps to configure ArgoCD:
+
+As a cluster administrator ensure OpenShift project has permissions:
+
+[source%nowrap,console]
+----
+oc adm policy add-role-to-user admin system:serviceaccount:openshift-gitops:openshift-gitops-argocd-application-controller -n demo-one
+----
+
+Sign in to ArgoCD, create a new project and add the code repository:
+
+[source%nowrap,console]
+----
+$ argoPass=$(oc get secret openshift-gitops-cluster -n openshift-gitops -o jsonpath='{.data.admin\.password}' | base64 -d)
+$ argoURL=$(oc get route -n openshift-gitops openshift-gitops-server -o jsonpath='{.spec.host}')
+$ argocd login --insecure --grpc-web $argoURL --username admin --password $argoPass
+$ argocd proj create argocd-demo-one --dest '*,*' --src '*' --allow-cluster-resource '*/*'
+$ argocd repo add https://github.com/rwalker-redhat/fastapi-quickstart-project.git
+----
+
+Create an ArgoCD application:
+
+[source%nowrap,console]
+----
+$ argocd app create fastapi-demo-one \
+                    --repo https://github.com/rwalker-redhat/fastapi-quickstart-project.git \
+                    --revision demo-one \
+                    --path helm \
+                    --dest-namespace demo-one \
+                    --dest-server https://kubernetes.default.svc \
+                    --project argocd-demo-one \
+                    --sync-policy auto
+----
+
+Results:
+
+image::argocd-overview.png[ArgoCD App]
+image::argocd-app-detail.png[ArgoCD App Detail]
+image::argocd-ocp-app.png[OpenShift Deployment]
+
+=== Pipeline 
+
+TIP: It's worth disabling auto-sync in ArgoCD for tha App, if it happens to be already synchronising when the task attempts to trigger it, it can cause the task to fail!
+
+Create a custom task (modified using the community argocd-sync-and-wait task):
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: argocd-task-sync-and-wait
+  namespace: demo-one
+spec:
+  description: >-
+    This task syncs (deploys) an Argo CD application and waits for it to be
+    healthy.
+
+    To do so, it requires the address of the Argo CD server and some form of
+    authentication either a username/password or an authentication token.
+  params:
+    - description: name of the application to sync
+      name: application-name
+      type: string
+    - default: HEAD
+      description: the revision to sync to
+      name: revision
+      type: string
+    - default: '--'
+      name: flags
+      type: string
+    - default: v2.1.6
+      name: argocd-version
+      type: string
+  stepTemplate:
+    envFrom:
+      - configMapRef:
+          name: argocd-env-configmap
+      - secretRef:
+          name: argocd-env-secret
+    name: ''
+    resources: {}
+  steps:
+    - image: 'docker.io/argoproj/argocd:$(params.argocd-version)'
+      name: login
+      resources: {}
+      script: >
+        if [ -z "$ARGOCD_AUTH_TOKEN" ]; then
+          yes | argocd login $ARGOCD_SERVER --username=$ARGOCD_USERNAME --password=$ARGOCD_PASSWORD --insecure;
+        fi
+
+        argocd app sync "$(params.application-name)" --revision
+        "$(params.revision)" "$(params.flags)"
+
+        sleep 5
+
+        argocd app wait "$(params.application-name)" --health "$(params.flags)"
+----
+
+[source%nowrap,console]
+----
+$ oc create -f argocd-task-sync-and-wait.yaml
+----
+
+The task needs credentials and a URL to log into Argo CD, create a configMap and secret with these details, for example:
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-env-configmap
+  namespace: demo-one
+data:
+  ARGOCD_SERVER: openshift-gitops-server-openshift-gitops.apps.walkers-lab.home.com
+  ARGOCD_USERNAME: admin
+----
+
+[source%nowrap,console]
+----
+$ oc create -f argocd_configmap.yaml
+----
+
+[source%nowrap,console]
+----
+$ echo $argoPass | base64
+----
+
+[source%nowrap,yaml]
+----
+kind: Secret
+apiVersion: v1
+metadata:
+  name: argocd-env-secret
+  namespace: demo-one
+data:
+  ARGOCD_PASSWORD: MGxScHNDbWJZOTdxWHJCZ2Uza0FTWjJuRVBvTHlWZFQK
+type: Opaque
+----
+
+[source%nowrap,console]
+----
+$ oc create -f ocp/argocd_secret.yaml
+----
+
+Create pipeline:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-build-and-sync
+spec:
+  params:
+    - default: demo-one
+      name: PROJECT_NAMESPACE
+      type: string
+    - default: fastapi-demo-one
+      name: IMAGE_NAME
+      type: string
+    - default: '1.0'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/rwalker-redhat/fastapi-quickstart-project.git'
+      name: GIT_REPO
+      type: string
+    - default: demo-one
+      name: GIT_REVISION
+      type: string
+    - default: Hello from demo one Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/$(params.PROJECT_NAMESPACE)/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: argocd-sync-and-wait
+      params:
+        - name: application-name
+          value: fastapi-demo-one
+        - name: revision
+          value: demo-one
+        - name: flags
+          value: '--'
+        - name: argocd-version
+          value: v2.1.6
+      runAfter:
+        - build
+      taskRef:
+        kind: Task
+        name: argocd-task-sync-and-wait
+----
+
+Run the pipeline:
+
+image::pipeline-run-v2.png[ArgoCD App]
+
+[#demo_version3]
+== Pipeline V3 - yq & git-cli
+
+So far each pipeline run has used an image tag of 1.0. There is 
+
+[source%nowrap,console]
+----
+$ oc get is
+NAME               IMAGE REPOSITORY                                                                             TAGS   UPDATED
+fastapi-demo-one   default-route-openshift-image-registry.apps.walkers-lab.home.com/demo-one/fastapi-demo-one   1.0    8 minutes ago
+----
+
+Running the pipeline again, and incrementing the tag creates an issue for ArgoCD, which is told what version of the application should be deployed using the tag number in `helm/values.yaml` in the source code repository in GitHub. Once a pipeline has successfully run, the version number could be manually incremented and committed, but it would be more effective to automate those steps. 
+
+[source%nowrap,console]
+----
+$ oc get is
+NAME               IMAGE REPOSITORY                                                                             TAGS      UPDATED
+fastapi-demo-one   default-route-openshift-image-registry.apps.walkers-lab.home.com/demo-one/fastapi-demo-one   1.1,1.0   31 seconds ago
+----
+
+=== YQ
+
+To work with replacing parameters in YAML files there is a tool called `yq`, a lightweight and portable command-line YAML processor. This tool make light work of replacing key value pairs in YAML configuration files. For example `yq e '.tag = "1.4"' -i helm/values.yaml`.
+
+Community tasks are easily imported via the web console using the Pipeline builder, however once you have such tasks available in a project you can take the YAML, and add them to future projects using the CLI, for example here is the YQ replace task:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  annotations:
+    tekton.dev/categories: Developer Tools
+    tekton.dev/displayName: YQ replace
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: linux/amd64
+    tekton.dev/tags: yq
+  name: yq
+  namespace: demo-one
+  labels:
+    app.kubernetes.io/version: '0.3'
+spec:
+  description: >-
+    This task can be used to replace fields in YAML files. For example for
+    altering helm charts on GitOps repos.
+  params:
+    - description: >-
+        A list of files to execute the expression on. Needs to be relative to
+        the source workspace.
+      name: files
+      type: array
+    - description: The yq expression to apply. Can be used to replace yaml fields.
+      name: expression
+      type: string
+    - default: >-
+        docker.io/mikefarah/yq:4.16.2@sha256:0d4f6e27bdcac7316f635acd524ab0eecc4ad50834b54d10322268650c7712cb
+      description: The yq image to use.
+      name: image
+      type: string
+  steps:
+    - args:
+        - '$(params.files[*])'
+      image: $(params.image)
+      name: replace-in-yaml
+      resources: {}
+      script: |
+        /usr/bin/env sh
+        set -e
+
+        for var in "$@"
+        do
+            /usr/bin/yq eval -i "$(params.expression)" "$var"
+        done
+      workingDir: $(workspaces.source.path)
+  workspaces:
+    - description: A workspace that contains the file which needs to be altered.
+      name: source
+----
+
+Then the pipeline is updated to include a stage using this task prior to the final ArgoCD synchronise task, notice the expression uses the IMAGE_TAG parameter:
+
+[source%nowrap,yaml]
+----
+...
+    - name: yq
+      params:
+        - name: files
+          value:
+            - helm/values.yaml
+        - name: expression
+          value: .tag = $(params.IMAGE_TAG)
+        - name: image
+          value: >-
+            docker.io/mikefarah/yq:4.16.2@sha256:0d4f6e27bdcac7316f635acd524ab0eecc4ad50834b54d10322268650c7712cb
+      runAfter:
+        - fetch-repository
+      taskRef:
+        kind: Task
+        name: yq
+      workspaces:
+        - name: source
+          workspace: workspace
+...
+----
+
+=== git-cli
+
+Likewise, an addition stage once the YQ has succeeded is to commit and push the change to GitHub, thus giving ArgoCD something to redeploy in the final stage of the pipeline.
+
+The `git-cli` is a cluster task, this task requires the SSH persistent volume described at the start of this guide. 
+
+In the `demo-one` project create the persistent volume claim:
+
+[source%nowrap,yaml]
+----
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-one-ssh-workspace
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs
+----
+
+[source%nowrap,yaml]
+----
+$ oc create -f workspace-pvc-ssh.yaml
+----
+
+The pipeline now needs to know about the additional workspace, and the `git-cli` task uses the shared workspace to work within, and the ssh-workspace to obtain the private SSH key for authentication with GitHub.
+
+Here is the full pipeline YAML, notice both workspaces are defined and the `runAfter` for each stage is updated to create the correct running order:
+
+[source%nowrap,yaml]
+----
+kind: Pipeline
+metadata:
+  name: s2i-build-commit-sync
+spec:
+  params:
+    - default: demo-one
+      name: PROJECT_NAMESPACE
+      type: string
+    - default: fastapi-demo-one
+      name: IMAGE_NAME
+      type: string
+    - default: '1.0'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/rwalker-redhat/fastapi-quickstart-project.git'
+      name: GIT_REPO
+      type: string
+    - default: demo-one
+      name: GIT_REVISION
+      type: string
+    - default: Hello from demo one Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+    - name: ssh-workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - fetch-repository
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/$(params.PROJECT_NAMESPACE)/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: yq
+      params:
+        - name: files
+          value:
+            - helm/values.yaml
+        - name: expression
+          value: .tag = $(params.IMAGE_TAG)
+        - name: image
+          value: >-
+            docker.io/mikefarah/yq:4.16.2@sha256:0d4f6e27bdcac7316f635acd524ab0eecc4ad50834b54d10322268650c7712cb
+      runAfter:
+        - build
+      taskRef:
+        kind: Task
+        name: yq
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: git-commit-push
+      params:
+        - name: BASE_IMAGE
+          value: >-
+            docker.io/alpine/git:v2.26.2@sha256:23618034b0be9205d9cc0846eb711b12ba4c9b468efdd8a59aac1d7b1a23363f
+        - name: GIT_SCRIPT
+          value: >
+            git add helm/values.yaml
+
+            git commit -m "updated tag via pipeline"
+
+            git remote set-url origin git@github.com:rwalker-redhat/fastapi-quickstart-project.git
+
+            export GIT_SSH_COMMAND="ssh -i /root/.ssh/pipeline -o 'IdentitiesOnly yes'"
+
+            git push origin HEAD:demo-one
+        - name: USER_HOME
+          value: /root
+        - name: VERBOSE
+          value: 'true'
+        - name: GIT_USER_NAME
+          value: rwalker-redhat
+        - name: GIT_USER_EMAIL
+          value: rwalker@redhat.com
+      runAfter:
+        - yq
+      taskRef:
+        kind: ClusterTask
+        name: git-cli
+      workspaces:
+        - name: source
+          workspace: workspace
+        - name: ssh-directory
+          workspace: ssh-workspace
+    - name: argocd-sync-and-wait
+      params:
+        - name: application-name
+          value: fastapi-demo-one
+        - name: revision
+          value: demo-one
+        - name: flags
+          value: '--'
+        - name: argocd-version
+          value: v2.1.6
+      runAfter:
+        - git-commit-push
+      taskRef:
+        kind: Task
+        name: argocd-task-sync-and-wait
+----
+
+Running the pipeline again creates a new tag (1.3), and makes the update to the helm chart. Notice, via the web console that both workspaces need selecting:
+
+image::pipeline-run-v3.png[ArgoCD App]
+
+image::pipeline-run-ver-3.png[Pipeline Run]
+
+
+[source%nowrap,console]
+----
+$ oc get is
+NAME               IMAGE REPOSITORY                                                                             TAGS          UPDATED
+fastapi-demo-one   default-route-openshift-image-registry.apps.walkers-lab.home.com/demo-one/fastapi-demo-one   1.2,1.1,1.0   2 minutes ago
+----
+
+Based on the image tag specified when starting the pipeline, the end result will be that version deployed. Therefore, coding can be done and committed to GitHub, business as usual, when ready for deployment, simply start the pipeline, incrementing the tag version and know everything will be deployed correctly.
+
+[#demo_version4]
+== Pipeline V4 - pytest
+
+This final version, inserts an extra step and demonstrates how to manage the pipeline via the command line interface.
+
+Add the pytest task:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: pytest
+  namespace: demo-one
+spec:
+  description: This task will run pytest on the provided input.
+  params:
+    - default: latest
+      description: 'The used Python version, more precisely the tag for the Python image'
+      name: PYTHON
+      type: string
+    - default: ''
+      description: The additional arguments to be used with pytest
+      name: ARGS
+      type: string
+    - default: .
+      description: The path to the source code
+      name: SOURCE_PATH
+      type: string
+    - default: requirements.txt
+      description: >-
+        The name of the requirements file inside the source location, with
+        fallback to the requirements file in the root location
+      name: REQUIREMENTS_FILE
+      type: string
+  steps:
+    - image: 'docker.io/python:$(inputs.params.PYTHON)'
+      name: unit-test
+      resources: {}
+      script: >
+        export PATH=$PATH:$HOME/.local/bin
+
+        if [ -e
+        "$(inputs.params.SOURCE_PATH)"/"$(inputs.params.REQUIREMENTS_FILE)" ];
+
+        then
+          pip install -r "$(inputs.params.SOURCE_PATH)"/"$(inputs.params.REQUIREMENTS_FILE)"
+          pip show pytest || {
+            printf "###\nWarning: Pytest is missing in your test requirements file\n###";
+            pip install pytest
+          }
+        else
+          if [ -e "$(inputs.params.REQUIREMENTS_FILE)" ];
+          then
+            pip install -r "$(inputs.params.REQUIREMENTS_FILE)"
+          fi
+          pip install pytest
+        fi
+
+        if [ -z "$(inputs.params.ARGS)" ]; then
+          pytest "$(inputs.params.SOURCE_PATH)"
+        else
+          pytest "$(inputs.params.ARGS)" "$(inputs.params.SOURCE_PATH)"
+        fi
+      workingDir: $(workspaces.source.path)
+  workspaces:
+    - name: source
+----
+
+
+Here is the final, complete pipeline YAML:
+
+[source%nowrap,yaml]
+----
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: s2i-test-build-commit-sync
+spec:
+  params:
+    - default: demo-one
+      name: PROJECT_NAMESPACE
+      type: string
+    - default: fastapi-demo-one
+      name: IMAGE_NAME
+      type: string
+    - default: '1.0'
+      name: IMAGE_TAG
+      type: string
+    - default: 'https://github.com/rwalker-redhat/fastapi-quickstart-project.git'
+      name: GIT_REPO
+      type: string
+    - default: demo-one
+      name: GIT_REVISION
+      type: string
+    - default: Hello from demo one Pipeline
+      name: MESSAGE
+      type: string
+  workspaces:
+    - name: workspace
+    - name: ssh-workspace
+  tasks:
+    - name: fetch-repository
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: workspace
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: pytest
+      params:
+        - name: PYTHON
+          value: latest
+        - name: SOURCE_PATH
+          value: .
+        - name: REQUIREMENTS_FILE
+          value: requirements.txt
+      runAfter:
+        - fetch-repository
+      taskRef:
+        kind: Task
+        name: pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: build
+      taskRef:
+        name: s2i-python
+        kind: ClusterTask
+      runAfter:
+        - pytest
+      workspaces:
+        - name: source
+          workspace: workspace
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/$(params.PROJECT_NAMESPACE)/$(params.IMAGE_NAME):$(params.IMAGE_TAG)
+        - name: TLSVERIFY
+          value: "false"
+    - name: yq
+      params:
+        - name: files
+          value:
+            - helm/values.yaml
+        - name: expression
+          value: .tag = $(params.IMAGE_TAG)
+        - name: image
+          value: >-
+            docker.io/mikefarah/yq:4.16.2@sha256:0d4f6e27bdcac7316f635acd524ab0eecc4ad50834b54d10322268650c7712cb
+      runAfter:
+        - build
+      taskRef:
+        kind: Task
+        name: yq
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: git-commit-push
+      params:
+        - name: BASE_IMAGE
+          value: >-
+            docker.io/alpine/git:v2.26.2@sha256:23618034b0be9205d9cc0846eb711b12ba4c9b468efdd8a59aac1d7b1a23363f
+        - name: GIT_SCRIPT
+          value: >
+            git add helm/values.yaml
+
+            git commit -m "updated tag via pipeline"
+
+            git remote set-url origin git@github.com:rwalker-redhat/fastapi-quickstart-project.git
+
+            export GIT_SSH_COMMAND= "ssh -i /root/.ssh/pipeline -o 'IdentitiesOnly yes'"
+
+            git push origin HEAD:demo-one
+        - name: USER_HOME
+          value: /root
+        - name: VERBOSE
+          value: 'true'
+        - name: GIT_USER_NAME
+          value: rwalker-redhat
+        - name: GIT_USER_EMAIL
+          value: rwalker@redhat.com
+      runAfter:
+        - yq
+      taskRef:
+        kind: ClusterTask
+        name: git-cli
+      workspaces:
+        - name: source
+          workspace: workspace
+        - name: ssh-directory
+          workspace: ssh-workspace
+    - name: argocd-sync-and-wait
+      params:
+        - name: application-name
+          value: fastapi-demo-one
+        - name: revision
+          value: demo-one
+        - name: flags
+          value: '--'
+        - name: argocd-version
+          value: v2.1.6
+      runAfter:
+        - git-commit-push
+      taskRef:
+        kind: Task
+        name: argocd-task-sync-and-wait
+----
+
+
+[source%nowrap,console]
+----
+$ tkn pipeline list
+NAME                         AGE              LAST RUN                       STARTED          DURATION    STATUS
+s2i-build-and-deploy         3 hours ago      s2i-build-and-deploy-lyg75p    3 hours ago      4 minutes   Succeeded
+s2i-build-and-sync           1 hour ago       s2i-build-and-sync-b454j8      1 hour ago       4 minutes   Succeeded
+s2i-build-commit-sync        57 minutes ago   s2i-build-commit-sync-mcn9mj   31 minutes ago   5 minutes   Succeeded
+s2i-test-build-commit-sync   1 minute ago     ---                            ---              ---         ---
+----
+
+The pipeline can be started using the `tkn` command as follows:
+
+[source%nowrap,console]
+----
+$ tkn pipeline start s2i-test-build-commit-sync \
+                     --namespace=demo-one \
+                     --param PROJECT_NAMESPACE=demo-one \
+                     --param GIT_REPO=https://github.com/rwalker-redhat/fastapi-quickstart-project.git \
+                     --param GIT_REVISION=demo-one \
+                     --param IMAGE_NAME=fastapi-demo-one \
+                     --param IMAGE_TAG='1.6' \
+                     --param MESSAGE='using tkn command' \
+                     --workspace name=workspace,claimName=demo-workspace \
+                     --workspace name=ssh-workspace,claimName=demo-one-ssh-workspace \
+                     --use-param-defaults \
+                     --showlog
+----
+
+image::final-run.png[Pipeline Run]

@@ -1,0 +1,11 @@
+= OpenShift Monitoring
+include::_attributes.adoc[]
+
+[#introduction]
+== Introduction to Monitoring
+
+Prometheus is the leading open-source monitoring solution used to power metrics and alerting. Its simple, lightweight microservice approach means each instance is independent for reliability. Built using an HTTP pull model, it supports powerful queries using PromQL for flexible real-time alerting. The project is written in Go and licensed under the Apache 2 License. Prometheus metrics are brought to life visually when coupled with Grafana, an open-source analytics & monitoring solution used for building dashboards. 
+
+The Prometheus monitoring stack is most commonly associated with Kubernetes or OpenShift. However, because Prometheus is a collection of microservices, it lends itself well to those container platforms. This guide aims to drill down into all the core moving parts, to gain a fundamental understanding of each component. Then explore why the Prometheus monitoring stack is so well suited to container platforms and how to best deploy and monitor OpenShift clusters and applications.  
+
+There is a crucial distinction between administrators monitoring clusters and developers monitoring their applications. While the tooling is the same, the implementations and usage are separate. However, before even touching monitoring on OpenShift, the first section of this guide goes back to basics, using a traditional Linux server and binaries to deploy, configure and monitor applications. The second section of this guide then moves to OpenShift, exploring how OpenShift 4 cluster ships with a Prometheus stack already deployed to provide clusters metrics. Then, from a developer perspective, how additional stacks get deployed using Operators for monitoring applications with more autonomy.  
