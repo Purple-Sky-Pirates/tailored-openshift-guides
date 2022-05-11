@@ -10,7 +10,6 @@
 * xref:01-0-getting-started.adoc[Getting Started]
 ** xref:01-1-architecture.adoc#package[OpenShift Architecture]
 ** xref:01-2-web-console.adoc#package[Web Console]
-** xref:01-3-cli.adoc#package[Command Line Interface]
 
 
 * xref:02-0-codeready-containers.adoc[CodeReady Containers]
@@ -89,10 +88,17 @@
 *** xref:04-9-knative.adoc#wrapper[FastAPI Script Wrapper]
 *** xref:04-9-knative.adoc#ocp_deploy[OpenShift Deployment]
 
+* xref:05-1-monitoring.adoc[OpenShift Monitoring]
 
-
-
-
+* xref:06-1-pipeline-demo.adoc[OpenShift Pipeline Demo]
+** xref:06-1-pipeline-demo.adoc#demo_intro[Introduction]
+** xref:06-1-pipeline-demo.adoc#demo_git[Git Branches]
+** xref:06-1-pipeline-demo.adoc#demo_workspaces[Workspaces]
+** xref:06-1-pipeline-demo.adoc#demo_ssh_workspace[SSH Workspace]
+** xref:06-1-pipeline-demo.adoc#demo_version1[Pipeline Version One]
+** xref:06-1-pipeline-demo.adoc#demo_version2[Pipeline Version Two]
+** xref:06-1-pipeline-demo.adoc#demo_version3[Pipeline Version Three]
+** xref:06-1-pipeline-demo.adoc#demo_version4[Pipeline Version Four]
 
 * xref:petclinic-architecture.adoc[Petclinic]
 ** xref:petclinic-container-image.adoc[Petclinic App]
