@@ -32,4 +32,5 @@ ui:
       contents: "static_files: [ .nojekyll ]"
 
 output:
+  clean: true
   dir: ./gh-pages

@@ -1,0 +1,8 @@
+= Migration from Openshift v3 to v4
+:navtitle: Migration from Openshift v3 to v4
+
+This section explains some ways on how you could migrate your applications from Openshift 3.x to 4.x.  We will cover the following:
+
+. Migrating Images from one cluster to another
+. Migrating manifests with templates
+. Converting Openshift templates to Helm Charts

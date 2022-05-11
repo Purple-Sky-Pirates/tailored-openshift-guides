@@ -122,12 +122,16 @@
 *** xref:petclinic-backend.adoc#linking_frontend_to_backend[Exercise: Link Frontend to Backend]
 *** xref:petclinic-backend.adoc#verify_application[Exercise: Verify App]
 
-* xref:migration-manifests.adoc[Migrating Manifests]
+* xref:migration-v3-to-v4.adoc[Migrating from v3 to v4]
+** xref:migration-images.adoc[Migrating Images]
+** xref:migration-manifests.adoc[Migrating Manifests]
+** xref:migration-optional-charts.adoc[Migrating Using Charts]
 
-* xref:eks-migration.adoc[]
-** xref:eks-security.adoc[]
-** xref:eks-supported-images.adoc[]
-** xref:eks-networking.adoc[]
 
-* xref:patterns.adoc[]
-** xref:patterns-breakup.adoc[]
+* xref:eks-migration.adoc[Migrating from EKS to Openshift]
+** xref:eks-security.adoc[Security]
+** xref:eks-supported-images.adoc[Images]
+** xref:eks-networking.adoc[Networking]
+
+* xref:patterns.adoc[Patterns]
+** xref:patterns-breakup.adoc[Breaking up the Monolith]

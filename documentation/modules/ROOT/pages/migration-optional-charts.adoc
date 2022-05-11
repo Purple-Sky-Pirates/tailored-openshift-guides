@@ -1,0 +1,114 @@
+= Creating Helm Charts
+:navtitle: Creating Helm Charts (optional)
+
+Helm 2.x required Tiller on Openshift which ran as a privileged user.
+Since Helm reached version 3.x it has removed the need for Tiller and the template processing occurrs on the client side, with any persistent data being stored in secrets to store the desired helm state.  Helm already has a lot of community support and is supported on Openshift v4.x
+
+Why Helm?
+
+Helm Positions itself as "the best way to find, share, and use software build for Kubernetes".  It has a number of neat features for installing and rolling back application deployments, along with "Hooks" which can perform actions like a post-install check, etc.  More information can be found via http://helm.sh
+
+A good place to find other helm charts is https://artifacthub.io where you could find many examples of well used helm charts.
+
+== Converting Templates to Helm Charts
+
+The redhat-cop have released a utility which helps with adopting helm bu converting your Openshift templates into a Helm chart called `template2helm`
+
+=== Installing template2helm
+
+Grab the binary and make it executable
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+wget https://github.com/redhat-cop/template2helm/releases/download/v0.1.0/linux-amd64-template2helm.bz2
+bzip2 -d linux-amd64-template2helm.bz2
+sudo mv linux-amd64-template2helm /usr/local/bin/template2helm
+sudo chmod +x /usr/local/bin/template2helm
+----
+
+Check that it is available on the path
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+template2helm
+----
+
+[.console-output]
+[source,bash]
+----
+Template2helm converts an OpenShift Template into a Helm Chart.
+      For more info, check out https://github.com/redhat-cop/template2helm
+
+Usage:
+  template2helm [command]
+
+Available Commands:
+  convert     Given the path to an OpenShift template file, spit out a Helm chart.
+  help        Help about any command
+  version     Print the version number of template2helm
+
+Flags:
+  -h, --help   help for template2helm
+
+Use "template2helm [command] --help" for more information about a command.
+----
+
+=== Transforming example templates
+
+The source code of `template2helm` includes some example resources which we can run the command against to see the output.
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+git clone https://github.com/redhat-cop/template2helm
+----
+
+There is an examples folder where we can try converting one of the existing examples:
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+mkdir mycharts
+template2helm convert -c ./mycharts/ -t ./template2helm/examples/js-app-deploy.yml 
+----
+
+[.console-output]
+[source,bash]
+----
+2021/12/10 11:24:58 Creating a template for object ImageStream
+2021/12/10 11:24:58 Creating a template for object DeploymentConfig
+2021/12/10 11:24:58 Creating a template for object Service
+2021/12/10 11:24:58 Creating a template for object Route
+2021/12/10 11:24:58 Creating a template for object RoleBinding
+2021/12/10 11:24:58 Convert parameter NAME to value .name
+2021/12/10 11:24:58 Convert parameter APP_TAG to value .app_tag
+2021/12/10 11:24:58 Convert parameter NAMESPACE to value .namespace
+2021/12/10 11:24:58 Convert parameter DEPLOYER_USER to value .deployer_user
+2021/12/10 11:24:58 Convert parameter PIPELINES_NAMESPACE to value .pipelines_namespace
+----
+
+Explore the generated chart and determine where changes would need to be made in order for your helm chart to work.
+
+[.console-input]
+[source,bash,subs="+attributes,macros+"]
+----
+find ./mycharts/js-app-deploy
+----
+
+[.console-output]
+[source,bash]
+----
+mycharts/js-app-deploy/
+mycharts/js-app-deploy/Chart.yaml
+mycharts/js-app-deploy/values.yaml
+mycharts/js-app-deploy/templates
+mycharts/js-app-deploy/templates/imagestream.yaml
+mycharts/js-app-deploy/templates/deploymentconfig.yaml
+mycharts/js-app-deploy/templates/service.yaml
+mycharts/js-app-deploy/templates/route.yaml
+mycharts/js-app-deploy/templates/rolebinding.yaml
+----
+
+

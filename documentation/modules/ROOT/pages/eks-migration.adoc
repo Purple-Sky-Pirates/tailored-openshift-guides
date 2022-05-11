@@ -15,11 +15,11 @@ While OpenShift will happily run most applications which have been designed for 
 
 So if you're bringing your own application from EKS to OpenShift, here are some of the main areas that you should think about:
 
-- xref:eks-security.adoc[]
+- xref:eks-security.adoc[Security]
 
-- xref:eks-supported-images.adoc[]
+- xref:eks-supported-images.adoc[Images]
 
-- xref:eks-networking.adoc[]
+- xref:eks-networking.adoc[Networking]
 
 
 

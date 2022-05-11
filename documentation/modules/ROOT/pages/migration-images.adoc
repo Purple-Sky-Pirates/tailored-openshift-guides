@@ -1,0 +1,105 @@
+= Migrating IMages
+:navtitle: Migrating Images
+
+We will need to ensure the Openshift 4 clusters are able to access the images, depending on how your apoplication is setup there are a number of considerations:
+
+- Do the images exist within the Openshift 3 container registry or off-cluster in an external registry?
+- Will container images and imagestreams need to be exported and re-imported into the new cluster?
+- Are the images build and deployed via CI/CD pipelines or system, and is the effort to repoint this system to another cluster minimal?
+
+== Migrating ImageStreams
+
+If you wish to migrate imagestreams we need to do the following:
+
+- Create the (empty) Imagestream in the target Openshift 4 cluster (this creates an image repository)
+- Copy the images from the v3 OPenshift clusyter to your newly created image repo
+
+=== Creating the IMagestream
+
+Probably the easiest way to do this is via the openshift console. In Administrat=or view find the imagestream section and create a new one:
+
+image:
+
+or create via YAML via `oc apply -f`
+
+[.console-input]
+[source,yaml,subs="+attributes,macros+"]
+----
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: nodejs-simple
+  namespace: some-sandbox
+----
+
+Once you have created the imagestream you should see that by inspecting the YAML you have a publicDockerImageRepository available
+
+image: [Imagestream after create]
+
+[.console-output]
+[source,bash]
+----
+status:
+  dockerImageRepository: >-
+    whatever
+  publicDOckerUmageRepository: asasdsa.asdasdas.asdas.asd
+----
+
+=== Copying the images
+
+In order to copy the images ocer we will user `podman` and `skopeo`
+
+1. `podman login` to the new ocp4 publicDockerImageRepository
+2. `podman login` to your ocp3 registry
+3. `oc login` to your openshift 3 project
+4. `skopeo copy` from your openshift 3 project imagestream to the new ocp4 publicDOckerimageRepository
+
+.`podman login` to the new ocp4 publicDockerImageRepository
+[source,yaml,subs="+attributes,macros+"]
+----
+podman login --authfile=./copy-auth.json -p $YOUR_OCP4_TOKEN -u unused some.ocp4.regitry
+----
+
+.`podman login` to the new ocp3 registry
+[source,yaml,subs="+attributes,macros+"]
+----
+podman login --authfile=./copy-auth.json -p $YOUR_OCP3_TOKEN -u unused some.ocp3.regitry
+----
+
+NOTE: check the ./copy-auth.json file exists, it should look somethiung like
+
+[source,yaml,subs="+attributes,macros+"]
+----
+{
+    "auths": {
+        "some.ocp3.registry":{
+            "auth": "SOME_TOKEN"
+        },
+        "some.ocp4.registry":{
+            "auth": "SOME_TOKEN"
+        }
+    }
+}
+----
+
+.`oc login` to your openshift 3 project
+[source,yaml,subs="+attributes,macros+"]
+----
+oc login --token=$YOUR_OCP3_TOKEN
+----
+
+NOTE: Check you are pointed at the correct cluster
+
+.`skopeo copy` the images over
+[source,yaml,subs="+attributes,macros+"]
+----
+YOUR_OCP3_PROJECT=some_project
+YOUR_OCP$_PROJECT=some_project
+
+for image in $(oc get imagestreamtag | awk '(NR >1) {print $1}'); do
+    echo "COPYING docker://some.ocp3.cluster/$YOUR_OCP3_PROJECT/$image TO docker://some.ocp4.cluster/$YOUR_OCP4_PROJECT/$image"
+    skopeo copy --authfile=./copy-auth.json docker://some.ocp3.cluster/$YOUR_OCP3_PROJECT/$image docker://some.ocp4.cluster/$YOUR_OCP4_PROJECT/$image
+done
+----
+
+Nice.  Now done!
